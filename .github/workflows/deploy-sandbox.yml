@@ -36,6 +36,42 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
+      # Fail before doing any work if the deploy target is not fully
+      # configured. Without this an unset secret would silently expand to an
+      # empty string, and `rsync --delete` against "user@host:/" would target
+      # the filesystem root instead of the document root.
+      - name: Validate deployment configuration
+        env:
+          SSH_HOST: ${{ secrets.SANDBOX_SSH_HOST }}
+          SSH_USER: ${{ secrets.SANDBOX_SSH_USER }}
+          SSH_PRIVATE_KEY: ${{ secrets.SANDBOX_SSH_PRIVATE_KEY }}
+          REMOTE_ROOT: ${{ secrets.SANDBOX_SSH_REMOTE_ROOT }}
+        run: |
+          missing=""
+          [ -n "$SSH_HOST" ]        || missing="$missing SANDBOX_SSH_HOST"
+          [ -n "$SSH_USER" ]        || missing="$missing SANDBOX_SSH_USER"
+          [ -n "$SSH_PRIVATE_KEY" ] || missing="$missing SANDBOX_SSH_PRIVATE_KEY"
+          [ -n "$REMOTE_ROOT" ]     || missing="$missing SANDBOX_SSH_REMOTE_ROOT"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing or empty required secret(s):$missing"
+            exit 1
+          fi
+
+          # Refuse a remote root that is not a real subdirectory. Deploying
+          # with --delete to any of these would destroy unrelated data.
+          case "$REMOTE_ROOT" in
+            /|/home|/root|/var|/etc|/usr|.|..)
+              echo "::error::SANDBOX_SSH_REMOTE_ROOT is unsafe for a --delete deploy"
+              exit 1
+              ;;
+            /*) : ;;
+            *)
+              echo "::error::SANDBOX_SSH_REMOTE_ROOT must be an absolute path"
+              exit 1
+              ;;
+          esac
+          echo "Deploy target validated."
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
