@@ -52,20 +52,32 @@ jobs:
             exit 1
           fi
 
-          # Refuse a remote root that is not a real subdirectory. Deploying
-          # with --delete to any of these would destroy unrelated data.
+          # A relative remote root is normal on cPanel: rsync resolves it
+          # against the SSH user's home directory, so "public_html" means
+          # /home/<user>/public_html. Both forms are accepted.
+          #
+          # What must be refused is anything that resolves to the home
+          # directory itself or climbs out of it, because the deploy runs with
+          # --delete and would take the rest of the account with it.
           case "$REMOTE_ROOT" in
-            /|/home|/root|/var|/etc|/usr|.|..)
-              echo "::error::PROD_SSH_REMOTE_ROOT is unsafe for a --delete deploy"
+            ''|.|./|'~'|'~/')
+              echo "::error::PROD_SSH_REMOTE_ROOT points at the home directory itself, which --delete would wipe. Use the document root instead, e.g. public_html"
               exit 1
               ;;
-            /*) : ;;
-            *)
-              echo "::error::PROD_SSH_REMOTE_ROOT must be an absolute path"
+            /|/home|/home/|/root|/var|/etc|/usr|/bin|/sbin|/boot|/opt)
+              echo "::error::PROD_SSH_REMOTE_ROOT is a system directory and is unsafe for a --delete deploy"
+              exit 1
+              ;;
+            ..|../*|*/../*|*/..)
+              echo "::error::PROD_SSH_REMOTE_ROOT must not contain a parent-directory reference"
               exit 1
               ;;
           esac
-          echo "Deploy target validated."
+
+          case "$REMOTE_ROOT" in
+            /*) echo "Deploy target validated (absolute path)." ;;
+            *)  echo "Deploy target validated ('$REMOTE_ROOT', relative to the SSH user's home directory)." ;;
+          esac
 
       - name: Set up Node.js
         uses: actions/setup-node@v4

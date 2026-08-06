@@ -83,6 +83,13 @@ Actions → Secrets):
 `PROD_SSH_HOST`, `PROD_SSH_PORT`, `PROD_SSH_USER`, `PROD_SSH_PRIVATE_KEY`,
 `PROD_SSH_REMOTE_ROOT` — and the same five with a `SANDBOX_` prefix.
 
+`*_SSH_REMOTE_ROOT` is the document root to deploy into. It may be relative,
+which is the usual cPanel form — `public_html` resolves against the SSH user's
+home directory, giving `/home/<user>/public_html`. An absolute path works too.
+Because the deploy runs with `--delete`, the workflow refuses a value that
+would resolve to the home directory itself (`.`, `~`, empty), a system
+directory, or anything containing `..`.
+
 These repository **variables** set the API endpoint per environment (Settings →
 Secrets and variables → Actions → Variables):
 
