@@ -1,0 +1,140 @@
+# ---------------------------------------------------------------------------
+# Deploy Insights to cPanel Sandbox  (https://insights.gh.aicountly.com)
+#
+# MANUAL ONLY. The single trigger is workflow_dispatch — merging or pushing
+# never deploys. Add no push/pull_request/schedule triggers to this file.
+#
+# What it does: builds the app on the runner, then rsyncs the built dist/
+# over SSH to the cPanel document root. No source, no node_modules, and no
+# .env ever reach the server.
+# ---------------------------------------------------------------------------
+name: Deploy to cPanel Sandbox
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run — show what rsync would change, write nothing'
+        type: boolean
+        default: false
+
+# Never let two deploys to the same target overlap.
+concurrency:
+  group: deploy-sandbox
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Build and deploy to Sandbox
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        env:
+          # Build-time config. Vite inlines VITE_* into the bundle, so these
+          # are public values — never put a secret here.
+          # Set SANDBOX_API_BASE_URL under Settings > Secrets and variables >
+          # Actions > Variables. The placeholder fallback is deliberately
+          # invalid so a missing variable fails loudly instead of silently
+          # pointing the app at the wrong backend.
+          VITE_API_BASE_URL: ${{ vars.SANDBOX_API_BASE_URL || 'https://REPLACE-ME.aicountly.com/api' }}
+          VITE_APP_NAME: Insights
+          VITE_APP_ENV: sandbox
+        run: |
+          if [ "$VITE_API_BASE_URL" = "https://REPLACE-ME.aicountly.com/api" ]; then
+            echo "::warning::Repository variable SANDBOX_API_BASE_URL is not set; building against a placeholder API URL."
+          fi
+          npm run build
+
+      - name: Verify build output
+        run: |
+          test -f dist/index.html || { echo "::error::dist/index.html missing — build produced no output"; exit 1; }
+          test -f dist/.htaccess || echo "::warning::dist/.htaccess missing — SPA routes may 404 on refresh"
+          # Belt and braces: a .env must never be shipped.
+          if find dist -name '.env*' ! -name '.env.example' | grep -q .; then
+            echo "::error::an .env file ended up in dist/ — refusing to deploy"
+            exit 1
+          fi
+
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SANDBOX_SSH_PRIVATE_KEY }}
+          SSH_HOST: ${{ secrets.SANDBOX_SSH_HOST }}
+          SSH_PORT: ${{ secrets.SANDBOX_SSH_PORT }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          # Pin the host key so deploys fail closed rather than trusting
+          # whatever answers on that address.
+          ssh-keyscan -p "${SSH_PORT:-22}" -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Deploy via rsync
+        env:
+          SSH_HOST: ${{ secrets.SANDBOX_SSH_HOST }}
+          SSH_PORT: ${{ secrets.SANDBOX_SSH_PORT }}
+          SSH_USER: ${{ secrets.SANDBOX_SSH_USER }}
+          REMOTE_ROOT: ${{ secrets.SANDBOX_SSH_REMOTE_ROOT }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          DRY_FLAG=""
+          if [ "$DRY_RUN" = "true" ]; then
+            DRY_FLAG="--dry-run"
+            echo "::notice::DRY RUN — no files will be written to the server."
+          fi
+
+          # Trailing slash on dist/ copies the *contents* into REMOTE_ROOT.
+          #
+          # --delete keeps the docroot free of files removed from the build.
+          # The excludes below protect paths cPanel owns that are not part of
+          # our build and must survive a deploy:
+          #   .env         — server-side env file, if one is ever placed there
+          #   .well-known/ — Let's Encrypt / AutoSSL validation; deleting it
+          #                  breaks certificate renewal
+          #   cgi-bin/     — cPanel-managed, present in every docroot
+          #   .git*        — never publish repository metadata
+          rsync -avz --delete $DRY_FLAG \
+            --exclude='.env' \
+            --exclude='.env.*' \
+            --exclude='.git*' \
+            --exclude='.well-known/' \
+            --exclude='cgi-bin/' \
+            --chmod=D755,F644 \
+            -e "ssh -i ~/.ssh/deploy_key -p ${SSH_PORT:-22} -o StrictHostKeyChecking=yes" \
+            dist/ "$SSH_USER@$SSH_HOST:$REMOTE_ROOT/"
+
+      - name: Clean up SSH key
+        if: always()
+        run: rm -f ~/.ssh/deploy_key
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### Sandbox deploy"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Target | https://insights.gh.aicountly.com |"
+            echo "| Commit | \`${GITHUB_SHA:0:7}\` |"
+            echo "| Ref | \`${GITHUB_REF_NAME}\` |"
+            echo "| Dry run | ${{ inputs.dry_run }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
