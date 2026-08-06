@@ -30,15 +30,34 @@ npm run dev
 `.env` is git-ignored and is never deployed — `.env.example` is the tracked
 template. Copy it and fill in real values locally.
 
+| Variable | Description |
+| --- | --- |
+| `PROD_API_BASE_URL` | server-php API base URL for production |
+| `SANDBOX_API_BASE_URL` | server-php API base URL for sandbox |
+| `VITE_API_BASE_URL` | The endpoint this build actually uses |
+| `VITE_APP_NAME` | Display name shown in the UI |
+| `VITE_APP_ENV` | `local`, `sandbox`, or `production` |
+
 Only `VITE_`-prefixed variables reach the browser bundle, and Vite inlines them
 at build time, so **treat every one of them as public**. Never put a secret,
 token, or password in a `VITE_` variable.
 
-| Variable | Description |
-| --- | --- |
-| `VITE_API_BASE_URL` | Base URL of the server-php API |
-| `VITE_APP_NAME` | Display name shown in the UI |
-| `VITE_APP_ENV` | `local`, `sandbox`, or `production` |
+### These are build-time values, not runtime values
+
+This matters for how you change an endpoint in production.
+
+Vite substitutes each `VITE_*` value into the JavaScript bundle when the app is
+compiled. The deployed result is plain static files — **the app never reads a
+`.env` from disk at runtime**, so placing a `.env` next to it in the cPanel
+document root has no effect. Changing an endpoint means rebuilding and
+redeploying.
+
+This is the opposite of server-php, which is PHP and does read its own `.env`
+on every request.
+
+So to change an API URL for a deployed app: update the repository variable
+(`PROD_API_BASE_URL` or `SANDBOX_API_BASE_URL`), then re-run the matching
+deploy workflow. The rebuild is what applies the change.
 
 ## Deployment
 
