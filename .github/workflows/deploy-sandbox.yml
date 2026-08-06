@@ -12,11 +12,6 @@ name: Deploy to cPanel Sandbox
 
 on:
   workflow_dispatch:
-    inputs:
-      dry_run:
-        description: 'Dry run — show what rsync would change, write nothing'
-        type: boolean
-        default: false
 
 # Never let two deploys to the same target overlap.
 concurrency:
@@ -129,14 +124,7 @@ jobs:
           SSH_PORT: ${{ secrets.SANDBOX_SSH_PORT }}
           SSH_USER: ${{ secrets.SANDBOX_SSH_USER }}
           REMOTE_ROOT: ${{ secrets.SANDBOX_SSH_REMOTE_ROOT }}
-          DRY_RUN: ${{ inputs.dry_run }}
         run: |
-          DRY_FLAG=""
-          if [ "$DRY_RUN" = "true" ]; then
-            DRY_FLAG="--dry-run"
-            echo "::notice::DRY RUN — no files will be written to the server."
-          fi
-
           # Trailing slash on dist/ copies the *contents* into REMOTE_ROOT.
           #
           # --delete keeps the docroot free of files removed from the build.
@@ -147,7 +135,7 @@ jobs:
           #                  breaks certificate renewal
           #   cgi-bin/     — cPanel-managed, present in every docroot
           #   .git*        — never publish repository metadata
-          rsync -avz --delete $DRY_FLAG \
+          rsync -avz --delete \
             --exclude='.env' \
             --exclude='.env.*' \
             --exclude='.git*' \
@@ -172,5 +160,4 @@ jobs:
             echo "| Target | https://insights.gh.aicountly.com |"
             echo "| Commit | \`${GITHUB_SHA:0:7}\` |"
             echo "| Ref | \`${GITHUB_REF_NAME}\` |"
-            echo "| Dry run | ${{ inputs.dry_run }} |"
           } >> "$GITHUB_STEP_SUMMARY"

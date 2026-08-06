@@ -71,8 +71,9 @@ Each run installs dependencies, builds, and `rsync`s only the built `dist/`
 to the cPanel document root over SSH. Source, `node_modules`, and `.env` never
 reach the server.
 
-Tick **Dry run** to preview exactly which files rsync would add, change, or
-delete without writing anything. Worth doing before the first production run.
+Before deploying, the workflow checks that every required SSH secret is set and
+that the remote root is a safe absolute path, so a misconfigured repository
+fails in seconds instead of part-way through a deploy.
 
 ### Configuration
 
