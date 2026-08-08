@@ -12,16 +12,28 @@ TypeScript. The API backend is **server-php**, running on the live cPanel portal
 
 Requires Node.js 22 or newer.
 
+This repository holds both halves of the app:
+
+```
+web/          React app (Vite). Builds to web/dist, deployed to the document root.
+server-php/   PHP API. Deployed to the api/ folder inside the document root.
+docs/         deployment and configuration notes
+```
+
 ```bash
+cd web
 npm install
-cp .env.example .env    # then set VITE_API_BASE_URL to your server-php endpoint
+cp ../.env.example ../.env   # then set VITE_API_BASE_URL
 npm run dev
 ```
+
+See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for how the API's `.env` and
+database settings work — they behave differently from the React variables.
 
 | Script | Purpose |
 | --- | --- |
 | `npm run dev` | Vite dev server on http://localhost:5173 |
-| `npm run build` | Type-check, then build to `dist/` |
+| `npm run build` | Type-check, then build to `web/dist/` |
 | `npm run typecheck` | Type-check only |
 | `npm run preview` | Serve the production build locally |
 
@@ -67,9 +79,15 @@ workflows trigger exclusively via `workflow_dispatch`.
 To deploy: **Actions** → *Deploy to cPanel Sandbox* or *Deploy to cPanel
 Production* → **Run workflow** → pick a branch → **Run**.
 
-Each run installs dependencies, builds, and `rsync`s only the built `dist/`
-to the cPanel document root over SSH. Source, `node_modules`, and `.env` never
-reach the server.
+Each run builds `web/` and `rsync`s the result over SSH:
+
+| Source | Destination |
+| --- | --- |
+| `web/dist/` | the document root |
+| `server-php/` | `api/` inside the document root |
+
+Source, `node_modules`, and `.env` never reach the server. The `server-php`
+step is skipped when that directory is not present in the repository.
 
 Before deploying, the workflow checks that every required SSH secret is set and
 that the remote root is a safe absolute path, so a misconfigured repository
@@ -107,11 +125,18 @@ quietly calling the wrong backend.
 `--delete` keeps the document root in sync with the build, but these paths are
 excluded so a deploy cannot destroy them:
 
+- `api/` — the PHP backend lives inside the document root and is deployed by
+  its own step. **Without this exclude every web deploy would delete the entire
+  API.**
 - `.well-known/` — Let's Encrypt / AutoSSL validation; removing it breaks
   certificate renewal
 - `cgi-bin/` — cPanel-managed, present in every document root
 - `.env`, `.env.*`, `.git*` — never published
 
-`public/.htaccess` ships with the build and provides the SPA history fallback
-so client-side routes survive a refresh, plus cache headers (`index.html`
-uncached, hashed assets cached for a year).
+The API step excludes `.env` for the same reason: the API's `.env` is created
+once on the server and read at runtime, so it must survive every deploy. See
+[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+
+`web/public/.htaccess` ships with the build and provides the SPA history
+fallback so client-side routes survive a refresh, plus cache headers
+(`index.html` uncached, hashed assets cached for a year).
