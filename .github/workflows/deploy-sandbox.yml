@@ -4,9 +4,10 @@
 # MANUAL ONLY. The single trigger is workflow_dispatch — merging or pushing
 # never deploys. Add no push/pull_request/schedule triggers to this file.
 #
-# What it does: builds the app on the runner, then rsyncs the built dist/
-# over SSH to the cPanel document root. No source, no node_modules, and no
-# .env ever reach the server.
+# What it does: builds web/ on the runner, rsyncs the built dist/ over SSH to
+# the cPanel document root, then rsyncs server-php/ to the api/ folder inside
+# that same document root. No source, no node_modules, and no .env ever reach
+# the server.
 # ---------------------------------------------------------------------------
 name: Deploy to cPanel Sandbox
 
@@ -92,40 +93,45 @@ jobs:
 
       - name: Build
         env:
-          # Build-time config. Vite inlines VITE_* into the bundle, so these
-          # are public values — never put a secret here.
-          # Set SANDBOX_API_BASE_URL under Settings > Secrets and variables >
-          # Actions > Variables. The placeholder fallback is deliberately
-          # invalid so a missing variable fails loudly instead of silently
-          # pointing the app at the wrong backend.
-          VITE_API_BASE_URL: ${{ vars.SANDBOX_API_BASE_URL || 'https://REPLACE-ME.aicountly.com/api' }}
+          # Build-time config. Vite inlines VITE_* into the bundle, so these are
+          # public values — never put a secret here.
+          #
+          # SANDBOX_API_BASE_URL (Settings > Secrets and variables > Actions >
+          # Variables) is an OPTIONAL override. Left unset, the app calls its own
+          # origin + /api, which is exactly where the "Deploy server-php to the
+          # api folder" step below puts it.
+          VITE_API_BASE_URL: ${{ vars.SANDBOX_API_BASE_URL }}
           VITE_APP_NAME: Insights
           VITE_APP_ENV: sandbox
         working-directory: web
         run: |
-          if [ "$VITE_API_BASE_URL" = "https://REPLACE-ME.aicountly.com/api" ]; then
-            echo "::warning::Repository variable SANDBOX_API_BASE_URL is not set; building against a placeholder API URL."
+          if [ -z "$VITE_API_BASE_URL" ]; then
+            echo "::notice::SANDBOX_API_BASE_URL is not set — the app will call https://insights.gh.aicountly.com/api (same origin), which is where this workflow deploys server-php below."
+          else
+            echo "Building against API base URL: $VITE_API_BASE_URL"
           fi
           npm run build
 
       - name: Verify build output
         run: |
           test -f web/dist/index.html || { echo "::error::web/dist/index.html missing — build produced no output"; exit 1; }
-          test -f web/dist/.htaccess || echo "::warning::web/dist/.htaccess missing — SPA routes may 404 on refresh"
+          test -f web/dist/.htaccess || echo "::warning::web/dist/.htaccess missing — SPA routes may 404 on refresh, which breaks the /auth/callback landing"
           # Belt and braces: a .env must never be shipped.
-          if find web/dist -name '.env*' ! -name '.env.example' | grep -q .; then
+          if find web/dist -name '.env*' | grep -q .; then
             echo "::error::an .env file ended up in web/dist — refusing to deploy"
             exit 1
           fi
-          if [ -d server-php ]; then
-            if find server-php -name '.env' | grep -q .; then
-              echo "::error::server-php contains a committed .env — refusing to deploy. The API .env belongs on the server only."
-              exit 1
-            fi
-            echo "server-php present — it will be deployed to the api folder."
-          else
-            echo "::notice::No server-php directory in this repository; only the web build will be deployed."
+          test -d server-php || { echo "::error::server-php/ is missing — the API deploy step below has nothing to deploy"; exit 1; }
+          test -f server-php/index.php || { echo "::error::server-php/index.php missing — the API has no front controller"; exit 1; }
+          # The API's .env is created once on the server and must never be
+          # committed — a committed one would be uploaded over the real file.
+          if find server-php -name '.env' | grep -q .; then
+            echo "::error::server-php contains a committed .env — refusing to deploy. The API .env belongs on the server only."
+            exit 1
           fi
+          # A syntax error here is a 500 on every endpoint, and rsync would ship
+          # it happily. Cheaper to catch on the runner.
+          find server-php -name '*.php' -print0 | xargs -0 -n1 php -l
 
       - name: Configure SSH
         env:
@@ -257,7 +263,7 @@ jobs:
           # and must survive a deploy:
           #   api/         — the PHP backend lives inside the document root and
           #                  is deployed by the next step. Without this exclude
-          #                  every web deploy would delete the entire API.
+          #                  this step would delete the entire API.
           #   .env         — server-side env file, if one is placed there
           #   .well-known/ — Let's Encrypt / AutoSSL validation; deleting it
           #                  breaks certificate renewal
@@ -275,7 +281,6 @@ jobs:
             web/dist/ "deploy-target:$REMOTE_ROOT/"
 
       - name: Deploy server-php to the api folder
-        if: hashFiles('server-php/**') != ''
         env:
           REMOTE_ROOT: ${{ secrets.SANDBOX_SSH_REMOTE_ROOT }}
         run: |
@@ -292,7 +297,20 @@ jobs:
             server-php/ "deploy-target:$REMOTE_ROOT/api/"
 
           echo "Deployed server-php to \$REMOTE_ROOT/api/"
-          echo "::notice::If this is the first API deploy, create api/.env on the server with the database credentials — it is never uploaded."
+          echo "::notice::If this is the first API deploy, create api/.env on the server from server-php/.env.example — it is never uploaded."
+
+      # A deployed API that cannot answer is worth knowing about now rather
+      # than from the app's login screen. /health needs no credentials.
+      - name: Smoke-test the deployed API
+        run: |
+          url="https://insights.gh.aicountly.com/api/health"
+          code=$(curl -fsS -o /tmp/health.json -w '%{http_code}' --max-time 20 "$url" || echo "000")
+          if [ "$code" = "200" ]; then
+            echo "GET $url → 200"
+            cat /tmp/health.json
+          else
+            echo "::warning::GET $url returned $code. If this is the first deploy, check that the subdomain's document root is the one in SANDBOX_SSH_REMOTE_ROOT and that api/.env exists."
+          fi
 
       - name: Clean up SSH credentials
         if: always()
@@ -307,6 +325,8 @@ jobs:
             echo "| | |"
             echo "|---|---|"
             echo "| Target | https://insights.gh.aicountly.com |"
+            echo "| Web | \`web/dist/\` → document root |"
+            echo "| API | \`server-php/\` → \`api/\` in the document root |"
             echo "| Commit | \`${GITHUB_SHA:0:7}\` |"
             echo "| Ref | \`${GITHUB_REF_NAME}\` |"
           } >> "$GITHUB_STEP_SUMMARY"

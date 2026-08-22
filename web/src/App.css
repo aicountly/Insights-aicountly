@@ -1,39 +1,54 @@
-.app {
-  max-width: 40rem;
-  margin: 0 auto;
-  padding: 4rem 1.5rem;
+.screen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 1.5rem;
 }
 
-.app h1 {
-  margin: 0;
-  font-size: 2.5rem;
-  letter-spacing: -0.02em;
+.panel {
+  width: 100%;
+  max-width: 32rem;
+  text-align: center;
 }
 
-.tagline {
-  margin: 0.25rem 0 2.5rem;
+.eyebrow {
+  margin: 0 0 0.75rem;
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.12em;
   font-size: 0.75rem;
 }
 
-.meta {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 0.5rem 1.5rem;
-  margin: 0;
-  padding-top: 1.5rem;
-  border-top: 1px solid var(--border);
-  font-size: 0.875rem;
+.welcome {
+  margin: 0 0 2rem;
+  font-size: 1.5rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
-.meta dt {
+.message {
+  margin: 0 0 2rem;
   color: var(--muted);
 }
 
-.meta dd {
-  margin: 0;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  overflow-wrap: anywhere;
+.button {
+  appearance: none;
+  border: 1px solid var(--accent);
+  border-radius: 0.5rem;
+  background: var(--accent);
+  color: var(--accent-fg);
+  padding: 0.625rem 1.5rem;
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.button:hover {
+  opacity: 0.85;
+}
+
+.button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
