@@ -4,6 +4,19 @@ import { ColumnChart, DonutChart, ForecastChart, LineChart, RankingChart } from 
 import { SourceStatusBar } from './SourceBadge'
 import type { MetricValue, RenderedWidget, SourceRow } from '../services/types'
 
+
+/**
+ * A single-column body that may be NARROWER THAN ITS CONTENT.
+ *
+ * A plain `display: grid` creates an implicit `auto` column, and an auto track
+ * is sized to the widest thing in it. In a three-column card on a laptop that
+ * means a rupee total lays the track out at its own full width and the figure
+ * is printed over the widget beside it — both unreadable. `minmax(0, 1fr)` lets
+ * the column shrink, and `overflow-wrap: anywhere` on the value (see
+ * insights-ui.css) lets the figure wrap inside it instead.
+ */
+const stacked = { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)' } as const
+
 /**
  * One widget, rendered from what the server answered.
  *
@@ -171,7 +184,7 @@ function KpiBody({ metric, onOpenEvidence }: { metric: MetricValue; onOpenEviden
         : 'danger'
 
   return (
-    <div style={{ display: 'grid', gap: 7 }}>
+    <div style={{ ...stacked, gap: 7 }}>
       <p className="insights-widget__value">{metric.formatted}</p>
       {comparison && comparison.change !== null ? (
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -206,7 +219,7 @@ function ComparisonBody({ metric }: { metric: MetricValue }) {
   const comparison = metric.comparison
 
   return (
-    <div style={{ display: 'grid', gap: 12 }}>
+    <div style={{ ...stacked, gap: 12 }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 12 }}>
         <div>
           <p className="insights-muted" style={{ margin: 0, fontSize: 12 }}>
@@ -300,7 +313,7 @@ function ForecastBody({ rendered }: { rendered: RenderedWidget }) {
   }
 
   return (
-    <div style={{ display: 'grid', gap: 10 }}>
+    <div style={{ ...stacked, gap: 10 }}>
       <ForecastChart
         title={rendered.title}
         unitLabel="₹"
@@ -355,18 +368,24 @@ function SummaryBody({
   }
 
   return (
-    <div style={{ display: 'grid', gap: 10 }}>
+    <div style={{ ...stacked, gap: 10 }}>
       {metrics.map((metric) => (
-        <div key={metric.metric_id} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'baseline' }}>
+        <div
+          key={metric.metric_id}
+          // Wraps rather than pushing the figure out of the card: this widget is
+          // often three columns wide, and a label and a rupee total do not share
+          // one line at that width.
+          style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'baseline', flexWrap: 'wrap' }}
+        >
           <button
             type="button"
             className="insights-button insights-button--quiet"
-            style={{ padding: 0, minHeight: 0, fontSize: 12.5, color: 'var(--ix-text)', textAlign: 'left' }}
+            style={{ padding: 0, minHeight: 0, fontSize: 12.5, color: 'var(--ix-text)', textAlign: 'left', minWidth: 0 }}
             onClick={onOpenEvidence ? () => onOpenEvidence(metric) : undefined}
           >
             {metric.label}
           </button>
-          <span className="num" style={{ fontWeight: 600, fontSize: 13 }}>
+          <span className="num" style={{ fontWeight: 600, fontSize: 13, minWidth: 0 }}>
             {metric.formatted}
             {metric.comparison?.change_formatted && metric.comparison.change !== null ? (
               <span className="insights-muted" style={{ fontWeight: 400, marginLeft: 6, fontSize: 12 }}>

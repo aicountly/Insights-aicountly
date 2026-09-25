@@ -437,6 +437,8 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+  /* So .insights-widget__value can size itself to this card. */
+  container-type: inline-size;
 }
 
 .insights-widget--selected {
@@ -449,6 +451,10 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
+  /* A three-column card on a laptop is about 110px of head. Six tool buttons do
+     not fit across that, and without the wrap they push out past the card's own
+     edge and sit on top of the next widget. */
+  flex-wrap: wrap;
 }
 
 .insights-widget__title {
@@ -456,16 +462,41 @@
   font-size: 13px;
   font-weight: 650;
   line-height: 1.3;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
-.insights-widget__tools { display: flex; gap: 2px; flex: none; }
+.insights-widget__tools { display: flex; gap: 2px; margin-left: auto; flex-wrap: wrap; justify-content: flex-end; }
 
 .insights-widget__value {
-  font-size: clamp(20px, 2.4vw, 28px);
+  /* The figure sizes itself to the CARD, not to the window: the same widget is
+     three columns wide on one dashboard and twelve on another, and a rupee
+     total that overflows its card is worse than a small one — it sits over the
+     widget beside it and neither can be read. The vw clamp is the fallback for
+     anything without container queries. */
+  font-size: clamp(16px, 2vw, 26px);
+  font-size: clamp(13px, 9cqw, 28px);
   font-weight: 650;
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
   line-height: 1.15;
+  /* Last resort only. The clamp above is set so a real Indian rupee total fits
+     the narrowest card this grid produces, because a figure broken across two
+     lines mid-digit is hard to read. It is still better than one printed over
+     the widget beside it, which is what this prevents. */
+  overflow-wrap: anywhere;
+  /* A grid or flex item is never narrower than its min-content unless it is
+     told it may be, and min-content for a rupee total is the whole figure. This
+     is what actually lets it wrap inside a three-column card instead of running
+     out over the widget beside it. */
+  min-width: 0;
+}
+
+/* Same reason: the comparison line under a figure carries a date range and is
+   the other thing that runs out of a narrow card. */
+.insights-widget .insights-muted {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .insights-widget__value--empty { color: var(--ix-muted); font-size: 16px; font-weight: 600; }

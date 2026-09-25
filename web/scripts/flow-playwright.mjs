@@ -301,6 +301,20 @@ check(
   `${Math.round(geometryBefore?.width ?? 0)}px → ${Math.round(geometryAfter?.width ?? 0)}px`,
 )
 check('an unsaved change is announced', (await owner.locator('body').innerText()).includes('Unsaved changes'))
+
+// A figure that runs out of its card is printed over the widget beside it, and
+// both become unreadable. It happens at the narrow end of the grid, which is
+// where a screenshot at one width will not show it.
+const spilling = await owner.locator('.insights-widget').evaluateAll((widgets) =>
+  widgets.flatMap((widget) => {
+    const box = widget.getBoundingClientRect()
+    return [...widget.querySelectorAll('*')]
+      .filter((el) => el.children.length === 0 && el.getBoundingClientRect().width > 0)
+      .filter((el) => el.getBoundingClientRect().right > box.right + 1)
+      .map((el) => `${widget.querySelector('.insights-widget__title')?.textContent?.trim()}: ${(el.textContent ?? '').trim().slice(0, 24)}`)
+  }),
+)
+check('nothing is printed outside its own widget', spilling.length === 0, spilling.slice(0, 3).join(' | '))
 await shot(owner, '05-builder')
 
 await owner.getByRole('button', { name: /^Save/ }).click()
