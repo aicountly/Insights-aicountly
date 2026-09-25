@@ -45,8 +45,11 @@ the app exchanges it for a short-lived session key. A user who is already signed
 in to another AICOUNTLY product lands straight on the overview. Insights has no
 password of its own and issues no token.
 
-See [docs/auth/AICOUNTLY_AUTH_WORKFLOW.md](docs/auth/AICOUNTLY_AUTH_WORKFLOW.md)
-and [docs/INTEGRATION_MAP.md](docs/INTEGRATION_MAP.md).
+See [docs/auth/AICOUNTLY_AUTH_WORKFLOW.md](docs/auth/AICOUNTLY_AUTH_WORKFLOW.md),
+[docs/INTEGRATION_MAP.md](docs/INTEGRATION_MAP.md) — what each figure is bound to
+and what is deliberately not bound — and
+[docs/COMPLETION_REPORT.md](docs/COMPLETION_REPORT.md), which says what has been
+verified against fixtures and what has not been verified live.
 
 ## Layout
 
