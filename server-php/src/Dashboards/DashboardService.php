@@ -59,6 +59,32 @@ final class DashboardService
     // -----------------------------------------------------------------------
 
     /**
+     * Keep only the parameters a statement actually names.
+     *
+     * The visibility predicate above collapses to TRUE for a company owner,
+     * which removes the ONLY mention of :uuid from the count query — and PDO,
+     * with emulated prepares off, rejects a bound parameter the statement does
+     * not use. It fails as SQLSTATE[HY093], which surfaces as a 503 "database
+     * unreachable", so the symptom says nothing about the cause.
+     *
+     * Filtering here lets the predicate keep changing shape without every call
+     * site remembering which binds the current shape dropped. A parameter the
+     * SQL names but nobody supplied still fails, which is the direction worth
+     * failing in.
+     *
+     * @param array<string, mixed> $params
+     * @return array<string, mixed>
+     */
+    private static function bound(string $sql, array $params): array
+    {
+        return array_filter(
+            $params,
+            static fn (string $name): bool => preg_match('/:' . preg_quote($name, '/') . '\b/', $sql) === 1,
+            ARRAY_FILTER_USE_KEY,
+        );
+    }
+
+    /**
      * The dashboards this person can open, in one of three groupings.
      *
      * @param string $scope mine | shared | team | all
@@ -112,18 +138,21 @@ final class DashboardService
 
         $clause = implode(' AND ', $where);
 
-        $total = (int) Db::scalar('SELECT COUNT(*) FROM ' . self::TABLE . ' d WHERE ' . $clause, $params);
+        $countSql = 'SELECT COUNT(*) FROM ' . self::TABLE . ' d WHERE ' . $clause;
+        $total = (int) Db::scalar($countSql, self::bound($countSql, $params));
 
-        $rows = Db::all(
-            'SELECT d.*,
+        $rowsSql = 'SELECT d.*,
                     (SELECT COUNT(*) FROM ' . self::WIDGETS . ' w WHERE w.dashboard_id = d.dashboard_id) AS widget_count,
                     (SELECT COUNT(*) FROM ' . self::SHARES . ' s3 WHERE s3.dashboard_id = d.dashboard_id) AS share_count,
                     EXISTS (SELECT 1 FROM ' . self::FAVOURITES . ' f WHERE f.dashboard_id = d.dashboard_id AND f.user_uuid = :uuid) AS is_favourite
                FROM ' . self::TABLE . ' d
               WHERE ' . $clause . '
               ORDER BY is_favourite DESC, ' . $sortColumn . ' ' . $direction . '
-              LIMIT :limit OFFSET :offset',
-            $params + ['limit' => max(1, min(200, $limit)), 'offset' => max(0, $offset)],
+              LIMIT :limit OFFSET :offset';
+
+        $rows = Db::all(
+            $rowsSql,
+            self::bound($rowsSql, $params + ['limit' => max(1, min(200, $limit)), 'offset' => max(0, $offset)]),
         );
 
         return [

@@ -46,6 +46,82 @@ function reply(int $status, array $payload): never
     exit;
 }
 
+/**
+ * Four dates spread across a window, so a trend has something to draw.
+ *
+ * @return list<string>
+ */
+function trendDates(string $from, string $to): array
+{
+    $start = strtotime($from) ?: strtotime('2026-01-01');
+    $end = strtotime($to) ?: $start;
+    $days = max(1, (int) round(($end - $start) / 86400));
+
+    $out = [];
+    foreach ([0.13, 0.36, 0.59, 0.82] as $at) {
+        $out[] = date('Y-m-d', $start + (int) round($days * $at) * 86400);
+    }
+
+    return array_values(array_unique($out));
+}
+
+// ---------------------------------------------------------------------------
+// The auth portal
+//
+// my.aicountly.com owns every token, and a live staff session cannot be minted
+// in a development container — AuthFilter validates against the real portal.
+// These three routes stand in for it so the browser verification exercises the
+// REAL request path (relay → seskey → Bearer → validatesession → uuid) rather
+// than a bypass bolted into the API.
+//
+// The tokens are deliberately legible: `auth-<uuid>` mints `ses-<uuid>`, which
+// validates back to `<uuid>`. That is what lets one browser run sign in as the
+// owner, a colleague and a restricted viewer in turn and prove that each sees
+// something different. PORTAL_AUTH_BASE points here; it defaults to
+// my.aicountly.com everywhere else, so nothing about this reaches production.
+// ---------------------------------------------------------------------------
+
+function bearer(): string
+{
+    $header = (string) ($_SERVER['HTTP_AUTHORIZATION'] ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '');
+    return preg_match('/Bearer\s+(.+)/i', $header, $m) === 1 ? trim($m[1]) : '';
+}
+
+if ($path === 'seskey' || $path === 'seskey/refresh') {
+    $authToken = bearer();
+    if ($authToken === '' || !str_starts_with($authToken, 'auth-')) {
+        reply(401, ['status' => 0, 'message' => 'Invalid auth token.']);
+    }
+
+    reply(200, [
+        'status'     => 1,
+        'ses_key'    => 'ses-' . substr($authToken, strlen('auth-')),
+        'expires_in' => 900,
+    ]);
+}
+
+if ($path === 'refresh_authtoken') {
+    $authToken = bearer();
+    if ($authToken === '' || !str_starts_with($authToken, 'auth-')) {
+        reply(401, ['status' => 0, 'message' => 'Invalid auth token.']);
+    }
+    reply(200, ['status' => 1, 'auth_token' => $authToken]);
+}
+
+if ($path === 'validatesession') {
+    $sesKey = bearer();
+    if ($sesKey === '' || !str_starts_with($sesKey, 'ses-')) {
+        reply(401, ['status' => 0, 'message' => 'Invalid or expired session.']);
+    }
+
+    $uuid = substr($sesKey, strlen('ses-'));
+    reply(200, [
+        'status'      => 1,
+        'uuid_aictly' => $uuid,
+        'user_name'   => ucfirst(str_replace('-', ' ', $uuid)),
+    ]);
+}
+
 // ---------------------------------------------------------------------------
 // Manage
 // ---------------------------------------------------------------------------
@@ -97,10 +173,22 @@ if (str_starts_with($path, 'dashboard/')) {
 
     $from = (string) ($_GET['from'] ?? '2026-01-01');
     $to = (string) ($_GET['to'] ?? '2026-01-31');
-    // The comparison window is read separately by the adapter, and it must get
-    // DIFFERENT figures or a comparison test proves nothing.
-    $isComparison = $from < '2025-12-15';
-    $scale = $isComparison ? 0.8 : 1.0;
+
+    // Figures move with the window, so a comparison of two windows is a real
+    // comparison rather than the same number twice. January 2026 and December
+    // 2025 keep the exact values the integration tests assert against; every
+    // other month gets a deterministic scale of its own, which is what makes a
+    // browser walk-through show a real change instead of a row of 0.0%.
+    $scale = match (substr($from, 0, 7)) {
+        '2026-01' => 1.0,
+        '2025-12' => 0.8,
+        default   => round(0.75 + ((int) substr($from, 5, 2) % 6) * 0.08, 4),
+    };
+
+    // Trend points land INSIDE the requested window. A stub that always answers
+    // with January's dates draws a flat line for every other period, which
+    // hides exactly the bug a chart check is looking for.
+    $points = trendDates($from, $to);
 
     $board = substr($path, strlen('dashboard/'));
 
@@ -118,10 +206,10 @@ if (str_starts_with($path, 'dashboard/')) {
             ],
             'prev_period_kpis' => ['total_sales' => 1000000.44],
             'trend' => ['granularity' => 'day', 'points' => [
-                ['date' => '2026-01-05', 'value' => 250000.10],
-                ['date' => '2026-01-12', 'value' => 400000.20],
-                ['date' => '2026-01-19', 'value' => 300000.15],
-                ['date' => '2026-01-26', 'value' => 300000.10],
+                ['date' => $points[0], 'value' => round(250000.10 * $scale, 4)],
+                ['date' => $points[1], 'value' => round(400000.20 * $scale, 4)],
+                ['date' => $points[2], 'value' => round(300000.15 * $scale, 4)],
+                ['date' => $points[3], 'value' => round(300000.10 * $scale, 4)],
             ]],
             'top_customers' => [
                 ['acc_id' => 501, 'label' => 'Sharma Distributors', 'amount' => 600000.00],
@@ -165,7 +253,7 @@ if (str_starts_with($path, 'dashboard/')) {
                 ['acc_id' => 701, 'label' => 'Bharat Steel', 'amount' => 500000.00],
             ],
             'top_items' => [],
-            'trend' => ['points' => [['date' => '2026-01-10', 'value' => 760000.40]]],
+            'trend' => ['points' => [['date' => $points[1], 'value' => round(760000.40 * $scale, 4)]]],
         ]]);
     }
 
@@ -180,10 +268,10 @@ if (str_starts_with($path, 'dashboard/')) {
                 'unattributed'      => ['receipt_vouchers' => 2, 'payment_vouchers' => 0],
             ],
             'trend' => ['granularity' => 'day', 'points' => [
-                ['date' => '2026-01-07', 'collections' => 300000.10, 'payments' => 150000.00],
-                ['date' => '2026-01-14', 'collections' => 260000.10, 'payments' => 170000.00],
-                ['date' => '2026-01-21', 'collections' => 200000.05, 'payments' => 100000.00],
-                ['date' => '2026-01-28', 'collections' => 150000.05, 'payments' => 100000.00],
+                ['date' => $points[0], 'collections' => round(300000.10 * $scale, 4), 'payments' => round(150000.00 * $scale, 4)],
+                ['date' => $points[1], 'collections' => round(260000.10 * $scale, 4), 'payments' => round(170000.00 * $scale, 4)],
+                ['date' => $points[2], 'collections' => round(200000.05 * $scale, 4), 'payments' => round(100000.00 * $scale, 4)],
+                ['date' => $points[3], 'collections' => round(150000.05 * $scale, 4), 'payments' => round(100000.00 * $scale, 4)],
             ]],
             'top_collections' => [['acc_id' => 501, 'label' => 'Sharma Distributors', 'amount' => 500000.00]],
             'top_payments'    => [['acc_id' => 701, 'label' => 'Bharat Steel', 'amount' => 320000.00]],

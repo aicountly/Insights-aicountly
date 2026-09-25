@@ -19,7 +19,7 @@ import {
   resolveLoginPortalOrigin,
   resolveProductKeyFromHost,
 } from './hostnames'
-import { clearAllTokens, getAuthToken, getSesKey, saveSession } from './tokens'
+import { clearAllTokens, clearSession, getAuthToken, getSesKey, saveSession } from './tokens'
 import { getApiBaseUrl } from '../config'
 
 /** Portal convention for "come back here afterwards". */
@@ -302,18 +302,26 @@ let mintInFlight: Promise<string> | null = null
 /**
  * A valid ses_key, minting one from the auth_token when needed.
  *
- * Concurrent callers share one request: a burst of API calls on a cold session
- * would otherwise mint a handful of keys and keep only the last.
+ * Concurrent callers share one request: a dashboard opening makes a dozen API
+ * calls at once, and without this each would mint its own key and keep only
+ * the last.
  *
- * There is no refresh path here on purpose. The key lives in memory and
- * `getSesKey()` returns null once it expires, so the next call simply mints a
- * fresh one from the long-lived auth_token — which is what a refresh would
- * achieve. `/seskey/refresh` becomes worth wiring up when the app starts making
- * enough API calls for the extra round trip to matter.
+ * `force` discards the key held in memory first. A key can be revoked
+ * server-side before its local expiry, and the API layer retries a 401 exactly
+ * once with a fresh key rather than sending the user back to the portal for
+ * something a round trip fixes.
+ *
+ * There is no separate refresh path on purpose: the key lives in memory and
+ * dies with the page, so minting a new one from the long-lived auth_token is
+ * what a refresh would achieve anyway.
  */
-export async function ensureSesKey(): Promise<string> {
-  const existing = getSesKey()
-  if (existing) return existing
+export async function ensureSesKey(force = false): Promise<string> {
+  if (force) {
+    clearSession()
+  } else {
+    const existing = getSesKey()
+    if (existing) return existing
+  }
 
   if (!mintInFlight) {
     mintInFlight = requestSesKey('/seskey').finally(() => {

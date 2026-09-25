@@ -518,6 +518,41 @@ check('a dashboard in another company is invisible, and reads as not found', fun
     assertSame(404, $response->status, 'a cross-company dashboard is not found');
 });
 
+check('the library lists in every scope, for an owner and for a member', function (): void {
+    // REGRESSION. The visibility predicate collapses to TRUE for someone who
+    // owns the company, which removed the only mention of :uuid from the count
+    // query — and PDO refuses a bound parameter the statement does not use. It
+    // surfaced as a 503 "database unreachable" on the Dashboards page, for the
+    // one kind of user most likely to be looking at it.
+    [$auth, $ctx] = actor(OWNER, 1, 1);
+    $service = new DashboardService($ctx, $auth);
+    $service->create(['title' => 'Trading board']);
+    $service->create(['title' => 'Cash board', 'visibility' => 'organisation']);
+
+    foreach (['all', 'mine', 'shared', 'team'] as $scope) {
+        $response = call([DashboardsController::class, 'index'], scope() + ['scope' => $scope]);
+        assertSame(200, $response->status, $scope . ' lists for a company owner');
+    }
+
+    // And with a search term, which adds a bind the count query does use.
+    $response = call([DashboardsController::class, 'index'], scope() + ['scope' => 'all', 'q' => 'trading']);
+    assertSame(200, $response->status, 'a search lists for a company owner');
+    assertSame(1, count($response->payload['data'] ?? []), 'and it filters');
+
+    // A member, whose predicate keeps :uuid, must still work.
+    actor(COLLEAGUE, 1, 0);
+    foreach (['all', 'mine', 'shared', 'team'] as $scope) {
+        $response = call([DashboardsController::class, 'index'], scope() + ['scope' => $scope]);
+        assertSame(200, $response->status, $scope . ' lists for a member');
+    }
+
+    // The member sees the organisation-wide board and not the owner's private one.
+    $response = call([DashboardsController::class, 'index'], scope() + ['scope' => 'all']);
+    $titles = array_map(static fn (array $row): string => (string) $row['title'], $response->payload['data'] ?? []);
+    assertTrue(in_array('Cash board', $titles, true), 'the organisation board is visible to a colleague');
+    assertTrue(!in_array('Trading board', $titles, true), "and the owner's private board is not");
+});
+
 // ===========================================================================
 
 section('Dashboards — build, save, version, share');
