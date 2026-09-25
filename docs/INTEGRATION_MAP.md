@@ -45,6 +45,8 @@ reports as provenance; it is what a user sees in the evidence drawer.
 | `finance.avg_invoice_value` | Average invoice value | books | currency | accrual | books GET /api/dashboard/sales -> data.kpis.avg_invoice_value |
 | `finance.collections` | Collections | books | currency | cash | books GET /api/dashboard/collections -> data.kpis.collections |
 | `finance.payments_made` | Payments made | books | currency | cash | books GET /api/dashboard/collections -> data.kpis.payments_made |
+| `finance.cash_received` | Cash received | books | currency | cash | books GET /api/dashboard/collections -> data.kpis.cash_received |
+| `finance.cash_paid` | Cash paid | books | currency | cash | books GET /api/dashboard/collections -> data.kpis.cash_paid |
 | `finance.receivables` | Receivables | books | currency | balance | books GET /api/dashboard/sales -> data.kpis.receivables |
 | `finance.overdue_receivables` | Overdue receivables | books | currency | balance | books GET /api/dashboard/sales -> data.kpis.overdue_receivables |
 | `finance.payables` | Payables | books | currency | balance | books GET /api/dashboard/purchase -> data.kpis.payables |
@@ -80,7 +82,7 @@ all the same.
 | Company list | Manage | `GET /api/companies` | The company switcher. Manage decides which companies come back, because the call carries the caller's own `ses_key`. |
 | Receivables and payables ageing | Books | `GET /api/dashboard/sales` → `data.receivables_ageing`, `GET /api/dashboard/purchase` → `data.payables_ageing` | The ageing widget. The source's own `total` bucket is deliberately dropped, or the chart would count the whole balance twice. |
 | Top customers, suppliers, items, expenses | Books | `data.top_customers`, `data.top_suppliers`, `data.top_items`, `data.top_expenses` | Ranking widgets. Marked **partial**: a leading-entries list is not the population. |
-| Collections and payments trend | Books | `GET /api/dashboard/collections` → `data.trend.points[]` | The collections chart. |
+| Collections and payments trend | Books | `GET /api/dashboard/collections` → `data.trend.points[]` | The collections chart. The trend is the party side only; there is no cash-side series, so `finance.cash_received` and `finance.cash_paid` report no trend rather than an invented one. |
 | Stock ageing | Inventory | `GET /api/v1/reports/stock-ageing` | The stock ageing widget. `meta.total` above the row count is reported as partial. |
 | The caller's permissions in the source | Books, Inventory | `GET /api/access/me`, `GET /api/v1/access/me` | Turning "the source refused this" into a sentence naming the permission needed there. |
 | Coverage | Sales, Purchases, Billing, POS | `GET /api/v1/permissions` (Sales, POS), `GET /api/v1/session` (Purchases, Billing), `GET /api/health` | Whether each product is configured, reachable and permitted — reported on Data sources, never converted into a figure. |
@@ -102,6 +104,28 @@ all the same.
 - **Retries only for a safe read that failed in a retryable way** — transport
   failure, 429, 503. A 403 is never retried; it is an answer.
 - **Credentials are redacted** from every log line.
+
+### A definition worth reading twice
+
+**Collections** and **Cash received** are both bound to
+`GET /api/dashboard/collections` and they are not the same number.
+
+A receipt that settles a ₹10,000 invoice with ₹500 discount allowed moves the
+customer balance by ₹10,000 and the bank by ₹9,500. The first is
+`finance.collections`; the second is `finance.cash_received`. Reporting either
+one as "money received" is wrong by every rupee of discount and TDS in the
+period, so Books computes both and the catalogue keeps them apart, each saying
+in its own definition what it measures. `finance.payments_made` and
+`finance.cash_paid` are the same pair on the payment side.
+
+Which line is the party is Books' own rule, the one its register already uses
+(`AccountingVoucherPartyResolver`): the credit line on a receipt, the debit line
+on a payment, on an account outside the cash and bank scope. Matching instead on
+the header's `party_acc_id` would miss every older post, where that column is
+unset — a mature ledger would read as almost entirely unattributed. A voucher
+with no line the rule can attribute (a bank-to-bank transfer booked as a
+receipt, say) is excluded and **counted** in `unattributed`, so a caller can say
+the figure is partial rather than discovering later that it was.
 
 ---
 

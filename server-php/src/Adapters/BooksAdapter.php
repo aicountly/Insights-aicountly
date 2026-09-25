@@ -67,6 +67,8 @@ final class BooksAdapter implements SourceAdapter
 
         'finance.collections'         => ['call' => 'collections', 'path' => 'kpis.collections'],
         'finance.payments_made'       => ['call' => 'collections', 'path' => 'kpis.payments_made'],
+        'finance.cash_received'       => ['call' => 'collections', 'path' => 'kpis.cash_received'],
+        'finance.cash_paid'           => ['call' => 'collections', 'path' => 'kpis.cash_paid'],
     ];
 
     /** The endpoint each bundle call maps to, for provenance. */

@@ -379,6 +379,37 @@ check('a metric comes back with its value, provenance and scope', function (): v
     assertTrue($revenue['fetched_at'] !== null, 'the fetch time is recorded');
 });
 
+check('collections and cash received are different figures, and say so', function (): void {
+    actor(OWNER);
+
+    $response = call([QueryController::class, 'metrics'], scope() + [
+        'metrics' => 'finance.collections,finance.cash_received',
+    ]);
+
+    $metrics = $response->data()['metrics'];
+    $collections = $metrics['finance.collections'];
+    $cash = $metrics['finance.cash_received'];
+
+    // A receipt that settles 10,000 with 500 discount allowed moves the customer
+    // balance by 10,000 and the bank by 9,500. Calling either one "money
+    // received" overstates or understates by every rupee of discount and TDS in
+    // the period, so Books reports both and the catalogue keeps them apart.
+    assertSame('available', $collections['status'], 'collections is available');
+    assertSame('available', $cash['status'], 'cash received is available');
+    assertTrue(
+        $collections['value'] !== $cash['value'],
+        'the two are not the same number',
+    );
+    assertTrue(
+        (float) $collections['value'] > (float) $cash['value'],
+        'and the balance moved further than the money did',
+    );
+
+    assertContains('balances fell', $collections['definition']['text'], 'collections says what it measures');
+    assertContains('actually arrived', $cash['definition']['text'], 'cash received says what it measures');
+    assertContains('kpis.cash_received', $cash['provenance'][0]['contract'], 'and names the field it read');
+});
+
 check('a comparison is a second read, not a guess', function (): void {
     actor(OWNER);
 

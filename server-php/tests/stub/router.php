@@ -260,11 +260,17 @@ if (str_starts_with($path, 'dashboard/')) {
     if ($board === 'collections') {
         reply(200, ['data' => [
             'kpis' => [
+                // `collections` is how far customer balances fell;
+                // `cash_received` is what actually arrived. The gap is discount
+                // allowed and TDS on the same vouchers, and a test that used the
+                // same number for both would prove nothing about the pair.
                 'collections'       => round(910000.30 * $scale, 4),
+                'cash_received'     => round(884300.30 * $scale, 4),
                 'receipt_count'     => 180,
                 'payments_made'     => round(520000.00 * $scale, 4),
+                'cash_paid'         => round(516800.00 * $scale, 4),
                 'payment_count'     => 96,
-                'net_cash_movement' => round(390000.30 * $scale, 4),
+                'net_cash_movement' => round(367500.30 * $scale, 4),
                 'unattributed'      => ['receipt_vouchers' => 2, 'payment_vouchers' => 0],
             ],
             'trend' => ['granularity' => 'day', 'points' => [
