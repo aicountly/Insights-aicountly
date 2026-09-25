@@ -9,16 +9,16 @@ declare(strict_types=1);
  * both insights.aicountly.com and insights.gh.aicountly.com.
  *
  * Routes:
- *   GET  /api/health          liveness + which environment answered
+ *   GET  /api/health          liveness, readiness and which environment answered
  *   POST /api/global/{path}   allow-listed relay to the portal auth API
  *   GET  /api/session         who the caller is, per the portal
- *
- * There is deliberately nothing else here yet.
+ *   *    /api/v1/...          the Insights API proper — see src/Routes.php
  */
 
 namespace Aicountly\Api;
 
 require __DIR__ . '/src/Env.php';
+require __DIR__ . '/src/Autoload.php';
 require __DIR__ . '/src/Portal.php';
 
 Env::load(__DIR__ . '/.env');
@@ -134,8 +134,8 @@ function apply_cors(): void
     }
 
     header('Access-Control-Allow-Origin: ' . $origin);
-    header('Access-Control-Allow-Headers: Authorization, Content-Type');
-    header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
+    header('Access-Control-Allow-Headers: Authorization, Content-Type, X-Correlation-Id, X-Source-App, X-Saas-Origin');
+    header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
     header('Access-Control-Max-Age: 600');
     header('Vary: Origin');
 }
@@ -165,11 +165,22 @@ if ($mountPoint !== '' && $mountPoint !== '/' && strpos($uri, $mountPoint) === 0
 $path = normalise_path($uri);
 
 if ($path === '' || $path === 'health') {
+    // Liveness AND readiness. 'status' stays ok whenever PHP is serving, so an
+    // uptime monitor pointed here keeps behaving as it always has; the database
+    // block is what tells you whether the product can actually be used.
+    // Reporting only the former is how a deploy goes green on an app whose every
+    // real endpoint answers 503.
+    $database = Health::database();
+
     send_json(200, [
         'status' => 'ok',
         'app' => 'Insights',
         'env' => Env::get('APP_ENV', 'unknown'),
         'time' => gmdate('c'),
+        'database' => $database,
+        // One field to read when something is wrong. False means the site is up
+        // and the product is not usable.
+        'usable' => $database['reachable'] && ($database['schema']['ready'] ?? false),
     ]);
 }
 
@@ -218,6 +229,39 @@ if ($path === 'session') {
     send_json(200, [
         'authenticated' => true,
         'uuid' => $session['uuid_aictly'] ?? ($session['uuid'] ?? ''),
+    ]);
+}
+
+// ---------------------------------------------------------------------------
+// The Insights API
+//
+// Everything above this line is the auth bootstrap and predates the product.
+// Everything below is the product, and it all goes through one router so that
+// authentication, company scope and the tenant check happen in one place rather
+// than being remembered per endpoint.
+// ---------------------------------------------------------------------------
+
+$router = new Router();
+Routes::register($router);
+
+try {
+    if ($router->dispatch($method, $path)) {
+        exit;
+    }
+} catch (\PDOException $e) {
+    // A database problem is ours, not the caller's. The detail goes to the log;
+    // the caller gets something they can act on and a correlation id that
+    // matches the log line.
+    error_log('[insights] database error on ' . $path . ' corr=' . Http::correlationId() . ': ' . $e->getMessage());
+    Http::error(503, 'database_unavailable', 'The Insights database is not reachable right now. Please retry.', [
+        'retryable' => true,
+        'correlation_id' => Http::correlationId(),
+    ]);
+} catch (\Throwable $e) {
+    error_log('[insights] unhandled error on ' . $path . ' corr=' . Http::correlationId() . ': '
+        . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine());
+    Http::error(500, 'server_error', 'Something went wrong handling that request.', [
+        'correlation_id' => Http::correlationId(),
     ]);
 }
 
