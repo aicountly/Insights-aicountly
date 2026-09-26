@@ -188,10 +188,34 @@ workflows trigger exclusively via `workflow_dispatch`.
 To deploy: **Actions** → pick a workflow → **Run workflow** → pick a branch →
 **Run**.
 
-| Workflow | Deploys | To |
+| Workflow | Does | To |
 | --- | --- | --- |
-| Deploy to cPanel Production | `web/dist/` then `server-php/` | document root, then `api/` inside it |
-| Deploy to cPanel Sandbox | `web/dist/` then `server-php/` | document root, then `api/` inside it |
+| Deploy to cPanel Production | builds `web/dist/`, then rsyncs it and `server-php/` | document root, then `api/` inside it |
+| Deploy to cPanel Sandbox | the same | document root, then `api/` inside it |
+| Run database migrations | runs `bin/migrate.php` over the deploy SSH key | the chosen environment's `api/` |
+
+### Running migrations
+
+The database is only reachable from the server, so migrations run there. The
+**Run database migrations** workflow does it over the same SSH key the deploys
+use, and defaults to changing nothing:
+
+| Mode | Effect |
+| --- | --- |
+| `status` (default) | lists what would run, writes nothing |
+| `dry-run` | parses and applies each file, then rolls back |
+| `apply` | applies and records them |
+
+Each file runs in its own transaction and is recorded with a checksum, so a
+half-applied migration cannot exist and an already-applied file is never run
+twice. Editing a migration that has already been applied is reported rather
+than silently reapplied.
+
+**It cannot create `api/.env`, and it will stop if that file is missing.** The
+`.env` holds the database password, is deliberately never deployed, and is
+created once by hand on the server — `server-php/.env.example` documents every
+value. Until it exists there is no database to migrate into, and the workflow
+says so rather than failing with a connection error.
 
 Production and sandbox deploy separately, so releasing to one cannot disturb
 the other. Within one environment, web and API deploy together in the same

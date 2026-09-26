@@ -1,0 +1,192 @@
+# ---------------------------------------------------------------------------
+# Run Insights database migrations on a deployed server
+#
+# MANUAL ONLY, and it defaults to changing nothing: the mode input starts at
+# `status`, which lists what would run and exits. Choose `apply` deliberately.
+#
+# It exists because the migrations have to run ON the server — the database is
+# not reachable from anywhere else — and until now that meant an SSH session.
+# The deploy workflows already hold the keys; this reuses them.
+#
+# What it does NOT do: create api/.env. That file holds the database password
+# and is created once, by hand, on the server. This workflow checks it is there
+# and says so plainly when it is not, because "cannot connect" is a worse error
+# message than "you have not written the file yet".
+# ---------------------------------------------------------------------------
+name: Run database migrations
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Which deployment
+        required: true
+        default: sandbox
+        type: choice
+        options:
+          - sandbox
+          - production
+      mode:
+        description: status = list only · dry-run = parse and roll back · apply = write
+        required: true
+        default: status
+        type: choice
+        options:
+          - status
+          - dry-run
+          - apply
+
+# Two migration runs against one database at the same time is how a schema ends
+# up half applied. Never cancel one in flight either — it may be mid-transaction.
+concurrency:
+  group: migrate-${{ inputs.target }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  migrate:
+    name: ${{ inputs.mode }} on ${{ inputs.target }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    env:
+      SSH_HOST: ${{ inputs.target == 'production' && secrets.PROD_SSH_HOST || secrets.SANDBOX_SSH_HOST }}
+      SSH_PORT: ${{ inputs.target == 'production' && secrets.PROD_SSH_PORT || secrets.SANDBOX_SSH_PORT }}
+      SSH_USER: ${{ inputs.target == 'production' && secrets.PROD_SSH_USER || secrets.SANDBOX_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ inputs.target == 'production' && secrets.PROD_SSH_PRIVATE_KEY || secrets.SANDBOX_SSH_PRIVATE_KEY }}
+      REMOTE_ROOT: ${{ inputs.target == 'production' && secrets.PROD_SSH_REMOTE_ROOT || secrets.SANDBOX_SSH_REMOTE_ROOT }}
+
+    steps:
+      - name: Validate configuration
+        run: |
+          missing=""
+          [ -n "$SSH_HOST" ]        || missing="$missing SSH_HOST"
+          [ -n "$SSH_USER" ]        || missing="$missing SSH_USER"
+          [ -n "$SSH_PRIVATE_KEY" ] || missing="$missing SSH_PRIVATE_KEY"
+          [ -n "$REMOTE_ROOT" ]     || missing="$missing SSH_REMOTE_ROOT"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing secret(s) for ${{ inputs.target }}:$missing"
+            exit 1
+          fi
+
+          case "$REMOTE_ROOT" in
+            ''|.|./|'~'|'~/'|/|/home|/home/|/root|/var|/etc|/usr|/bin|/sbin|/boot|/opt)
+              echo "::error::SSH_REMOTE_ROOT is not a document root."
+              exit 1
+              ;;
+            ..|../*|*/../*|*/..)
+              echo "::error::SSH_REMOTE_ROOT must not contain a parent-directory reference."
+              exit 1
+              ;;
+          esac
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          sed -i 's/\r$//' ~/.ssh/deploy_key
+          if ! ssh-keygen -y -f ~/.ssh/deploy_key > /dev/null 2>&1; then
+            echo "::error::The SSH private key for ${{ inputs.target }} is not usable. Copy the whole file, BEGIN and END lines included."
+            exit 1
+          fi
+
+          if ! ssh-keyscan -p "${SSH_PORT:-22}" -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/tmp/keyscan.err; then
+            echo "::error::ssh-keyscan could not reach the host on the configured port."
+            sed 's/^/    /' /tmp/keyscan.err
+            exit 1
+          fi
+          [ -s ~/.ssh/known_hosts ] || { echo "::error::The host returned no SSH host key."; exit 1; }
+          chmod 600 ~/.ssh/known_hosts
+
+          # Older cPanel hosts offer only RSA with SHA-1, which the runner's
+          # OpenSSH refuses by default — and reports as "Permission denied".
+          cat > ~/.ssh/config <<CFG
+          Host migrate-target
+            HostName $SSH_HOST
+            User $SSH_USER
+            Port ${SSH_PORT:-22}
+            IdentityFile ~/.ssh/deploy_key
+            IdentitiesOnly yes
+            StrictHostKeyChecking yes
+            PubkeyAcceptedAlgorithms +ssh-rsa
+            HostKeyAlgorithms +ssh-rsa
+            BatchMode yes
+          CFG
+          chmod 600 ~/.ssh/config
+
+      - name: Check the API is deployed and configured
+        run: |
+          # `php` on a cPanel PATH is often an ancient default. Find one new
+          # enough to run the migration runner, and say which was chosen — a
+          # migration applied by the wrong interpreter is a confusing failure.
+          ssh migrate-target "REMOTE_ROOT='$REMOTE_ROOT' bash -s" <<'REMOTE'
+            set -eu
+            API="$REMOTE_ROOT/api"
+
+            [ -d "$API" ] || { echo "::error::$API does not exist — deploy the API first."; exit 1; }
+            [ -f "$API/bin/migrate.php" ] || { echo "::error::$API/bin/migrate.php is missing — deploy the API first."; exit 1; }
+
+            if [ ! -f "$API/.env" ]; then
+              echo "::error::$API/.env does not exist. It holds the database credentials, is never deployed, and has to be created once by hand on the server. server-php/.env.example in the repository documents every value."
+              exit 1
+            fi
+
+            if ! grep -qE '^[[:space:]]*DB_NAME[[:space:]]*=[[:space:]]*[^[:space:]]' "$API/.env" \
+               || ! grep -qE '^[[:space:]]*DB_USER[[:space:]]*=[[:space:]]*[^[:space:]]' "$API/.env"; then
+              echo "::error::$API/.env exists but DB_NAME or DB_USER is empty. Fill both before migrating."
+              exit 1
+            fi
+            echo "api/.env is present and names a database."
+          REMOTE
+
+      - name: Choose a PHP interpreter on the server
+        run: |
+          ssh migrate-target 'bash -s' <<'REMOTE' | tee /tmp/php.txt
+            set -eu
+            best=""
+            for candidate in php /usr/local/bin/php /opt/cpanel/ea-php84/root/usr/bin/php \
+                             /opt/cpanel/ea-php83/root/usr/bin/php /opt/cpanel/ea-php82/root/usr/bin/php \
+                             /opt/cpanel/ea-php81/root/usr/bin/php; do
+              command -v "$candidate" >/dev/null 2>&1 || continue
+              version=$("$candidate" -r 'echo PHP_VERSION;' 2>/dev/null) || continue
+              if "$candidate" -r 'exit(version_compare(PHP_VERSION, "8.1.0", ">=") ? 0 : 1);' 2>/dev/null; then
+                # pdo_pgsql is the one the CLI build often lacks even when the
+                # web SAPI has it, and without it the runner cannot connect.
+                if "$candidate" -r 'exit(extension_loaded("pdo_pgsql") ? 0 : 1);' 2>/dev/null; then
+                  echo "PHP=$candidate"
+                  echo "VERSION=$version"
+                  best="$candidate"
+                  break
+                fi
+              fi
+            done
+            if [ -z "$best" ]; then
+              echo "::error::No PHP 8.1+ CLI with pdo_pgsql found on the server. cPanel keeps them under /opt/cpanel/ea-phpNN/root/usr/bin/php; enable pdo_pgsql for that version."
+              exit 1
+            fi
+          REMOTE
+          grep '^PHP=' /tmp/php.txt >> "$GITHUB_ENV"
+          echo "Using $(grep '^VERSION=' /tmp/php.txt | cut -d= -f2)"
+
+      - name: Run the migration runner
+        run: |
+          case "${{ inputs.mode }}" in
+            status)  FLAG='--status'  ;;
+            dry-run) FLAG='--dry-run' ;;
+            apply)   FLAG=''          ;;
+          esac
+
+          echo "::notice::${{ inputs.mode }} on ${{ inputs.target }}"
+          ssh migrate-target "cd '$REMOTE_ROOT/api' && '$PHP' bin/migrate.php $FLAG"
+
+      # What is left afterwards, from the runner that already knows how to say
+      # it. Inline PHP over SSH would need three levels of quoting to ask the
+      # same question, and would be its own source of failures.
+      - name: What remains
+        if: always() && inputs.mode == 'apply'
+        run: |
+          ssh migrate-target "cd '$REMOTE_ROOT/api' && '$PHP' bin/migrate.php --status" \
+            || echo "::warning::Could not read the migration state back. Check /api/health in a browser — usable should now be true."
