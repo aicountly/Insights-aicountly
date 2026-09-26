@@ -20,6 +20,9 @@ namespace Aicountly\Api;
 require __DIR__ . '/src/Env.php';
 require __DIR__ . '/src/Autoload.php';
 require __DIR__ . '/src/Portal.php';
+// Required outright rather than autoloaded: it reports on servers too old to
+// load the rest of this application, so it cannot depend on them.
+require __DIR__ . '/src/Runtime.php';
 
 Env::load(__DIR__ . '/.env');
 
@@ -171,16 +174,49 @@ if ($path === '' || $path === 'health') {
     // Reporting only the former is how a deploy goes green on an app whose every
     // real endpoint answers 503.
     $database = Health::database();
+    $runtime = Runtime::report();
 
     send_json(200, [
         'status' => 'ok',
         'app' => 'Insights',
         'env' => Env::get('APP_ENV', 'unknown'),
         'time' => gmdate('c'),
+        // What this server can do. A version or extension mismatch stops every
+        // routed endpoint dead while this endpoint still answers 200, so the
+        // difference has to be visible from here or it is invisible entirely.
+        'runtime' => $runtime,
         'database' => $database,
         // One field to read when something is wrong. False means the site is up
         // and the product is not usable.
-        'usable' => $database['reachable'] && ($database['schema']['ready'] ?? false),
+        'usable' => $runtime['ok'] && $database['reachable'] && ($database['schema']['ready'] ?? false),
+    ]);
+}
+
+// ---------------------------------------------------------------------------
+// Everything below this line needs a server that can actually run it
+// ---------------------------------------------------------------------------
+//
+// Health answers above regardless, on purpose: an uptime monitor should keep
+// working. From here on, an unfit server is reported as an unfit server.
+//
+// Without this the failure was a bare 500 with a correlation id and nothing
+// else — the interpreter could not parse Auth or Http, the ParseError was
+// caught by the handler at the bottom of this file, and the only record of the
+// real cause was a line in an error log the person deploying may not be able to
+// read.
+
+$unmet = Runtime::unmet();
+if ($unmet !== []) {
+    send_json(503, [
+        'error' => [
+            'code' => 'server_not_supported',
+            'message' => 'This server cannot run the Insights API yet. ' . $unmet[0]['fix'],
+            'details' => [
+                'retryable' => false,
+                'problems' => $unmet,
+            ],
+        ],
+        'message' => 'This server cannot run the Insights API yet. ' . $unmet[0]['fix'],
     ]);
 }
 

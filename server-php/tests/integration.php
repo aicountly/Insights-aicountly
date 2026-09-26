@@ -208,6 +208,56 @@ function grant(string $uuid, array $permissions, int $cmpId = 1): void
 
 // ===========================================================================
 
+section('Runtime — what this server can and cannot do');
+
+check('a fit server reports no problems', function (): void {
+    // This container runs a supported PHP with every extension loaded, so the
+    // check must be silent here. A check that fires on a healthy server is one
+    // people learn to ignore.
+    assertSame([], \Aicountly\Api\Runtime::unmet(), 'nothing unmet on a fit server');
+
+    $report = \Aicountly\Api\Runtime::report();
+    assertTrue($report['ok'], 'the health block agrees');
+    assertSame(PHP_VERSION, $report['php'], 'and names the version it actually found');
+});
+
+check('the minimum PHP version matches what the code really needs', function (): void {
+    // Auth and Http use readonly promotion and `never`, both 8.1. If either
+    // stops being true the constant is wrong, and the gate would let an
+    // unsupported server through to a ParseError and a blank 500 — which is the
+    // failure this whole file exists to prevent.
+    $needsEightOne = 0;
+    foreach (['src/Auth.php', 'src/Http.php'] as $file) {
+        $source = (string) file_get_contents(__DIR__ . '/../' . $file);
+        if (preg_match('/(public|private|protected)\s+readonly|\)\s*:\s*never/', $source) === 1) {
+            $needsEightOne++;
+        }
+    }
+
+    assertTrue($needsEightOne > 0, 'the routed path still uses PHP 8.1 syntax');
+    assertSame('8.1.0', \Aicountly\Api\Runtime::MINIMUM_PHP, 'and the constant says so');
+});
+
+check('Runtime itself parses on an interpreter too old to run the product', function (): void {
+    // Its whole job is to report on such a server, so it cannot use anything
+    // newer than the oldest PHP that might be asked to load it.
+    $source = (string) file_get_contents(__DIR__ . '/../src/Runtime.php');
+
+    foreach ([
+        '/(public|private|protected)\s+readonly/' => 'readonly promotion (8.1)',
+        '/\)\s*:\s*never/'                        => 'never return type (8.1)',
+        '/^\s*enum\s+/m'                          => 'enum (8.1)',
+        '/\bmatch\s*\(/'                          => 'match (8.0)',
+        '/\?\?=/'                                  => 'null coalescing assignment (7.4)',
+        '/\bfn\s*\(/'                             => 'arrow function (7.4)',
+        '/declare\s*\(\s*strict_types/'           => 'strict_types, which would fail the call it is trying to report',
+    ] as $pattern => $what) {
+        assertTrue(preg_match($pattern, $source) !== 1, 'Runtime.php avoids ' . $what);
+    }
+});
+
+// ===========================================================================
+
 section('Decimal arithmetic — the financial correctness floor');
 
 check('0.1 + 0.2 is exactly 0.3', function (): void {
