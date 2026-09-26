@@ -326,10 +326,27 @@ abstract class ApiClient
             // A redirect is how an allowlisted host hands a live session key to
             // one that is not. Nothing in this fleet needs one.
             CURLOPT_FOLLOWLOCATION => false,
-            CURLOPT_PROTOCOLS_STR  => 'http,https',
         ];
         if ($body !== null) {
             $options[CURLOPT_POSTFIELDS] = json_encode($body, JSON_UNESCAPED_UNICODE);
+        }
+
+        // Refuse anything that is not HTTP, so a redirect or a malformed base
+        // can never make this client speak file:// or gopher://.
+        //
+        // WHICH CONSTANT EXISTS DEPENDS ON THE BUILD, NOT ON PHP. The _STR form
+        // needs libcurl 7.85, and PHP simply does not define it when linked
+        // against anything older — plenty of shared hosts are. Referencing an
+        // undefined constant is a fatal Error in PHP 8, so naming it directly
+        // made every cross-service call answer 500 on such a host while
+        // /api/health, which makes none, stayed green. Portal::forward sets no
+        // protocol option at all, which is why signing in worked and the very
+        // next request did not.
+        if (defined('CURLOPT_PROTOCOLS_STR')) {
+            $options[CURLOPT_PROTOCOLS_STR] = 'http,https';
+        } elseif (defined('CURLOPT_PROTOCOLS')) {
+            // Deprecated in libcurl 7.85, present since long before it.
+            $options[CURLOPT_PROTOCOLS] = CURLPROTO_HTTP | CURLPROTO_HTTPS;
         }
 
         return $options;

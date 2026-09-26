@@ -238,6 +238,68 @@ check('the minimum PHP version matches what the code really needs', function ():
     assertSame('8.1.0', \Aicountly\Api\Runtime::MINIMUM_PHP, 'and the constant says so');
 });
 
+check('no curl constant is named that an older libcurl would not define', function (): void {
+    // THIS TEST EXISTS BECAUSE THE CONTAINER LIED. CURLOPT_PROTOCOLS_STR needs
+    // libcurl 7.85, and PHP does not define it when linked against anything
+    // older. Here libcurl is new enough that the constant exists, every test
+    // passed, and production — same PHP, older libcurl — answered 500 to every
+    // cross-service call while /api/health stayed green, because health makes
+    // none. An undefined constant is a fatal Error in PHP 8.
+    //
+    // So the rule is checked by reading the source rather than by running it:
+    // anything outside the floor below has to be guarded with defined().
+    $availableEverywhere = [
+        'CURLOPT_RETURNTRANSFER', 'CURLOPT_CUSTOMREQUEST', 'CURLOPT_HTTPHEADER',
+        'CURLOPT_CONNECTTIMEOUT', 'CURLOPT_TIMEOUT', 'CURLOPT_HEADER',
+        'CURLOPT_POST', 'CURLOPT_POSTFIELDS', 'CURLOPT_FOLLOWLOCATION', 'CURLOPT_WRITEFUNCTION',
+        'CURLOPT_URL', 'CURLOPT_NOBODY', 'CURLOPT_SSL_VERIFYPEER', 'CURLOPT_SSL_VERIFYHOST',
+        'CURLINFO_RESPONSE_CODE', 'CURLINFO_CONTENT_TYPE', 'CURLINFO_HEADER_SIZE',
+        'CURLM_OK', 'CURLM_CALL_MULTI_PERFORM', 'CURLMSG_DONE',
+        'CURLPROTO_HTTP', 'CURLPROTO_HTTPS', 'CURLOPT_PROTOCOLS',
+    ];
+
+    $unguarded = [];
+    foreach (new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator(__DIR__ . '/../src')) as $file) {
+        if ($file->getExtension() !== 'php') {
+            continue;
+        }
+        $source = (string) file_get_contents($file->getPathname());
+
+        // Every constant the file names, minus every one it checks first.
+        preg_match_all('/\b(CURL[A-Z]*_[A-Z0-9_]+)\b/', $source, $named);
+        preg_match_all("/defined\(\s*'(CURL[A-Z]*_[A-Z0-9_]+)'\s*\)/", $source, $guarded);
+
+        foreach (array_unique($named[1]) as $constant) {
+            if (in_array($constant, $availableEverywhere, true)) {
+                continue;
+            }
+            if (in_array($constant, $guarded[1], true)) {
+                continue;
+            }
+            $unguarded[] = basename($file->getPathname()) . ': ' . $constant;
+        }
+    }
+
+    assertSame(
+        [],
+        $unguarded,
+        'every curl constant outside the floor is guarded with defined() — otherwise: ' . implode(', ', $unguarded),
+    );
+});
+
+check('the protocol restriction still applies, whichever constant exists', function (): void {
+    // Guarding it must not have quietly dropped it: this is what stops a
+    // redirect or a malformed base making the client speak file://.
+    $source = (string) file_get_contents(__DIR__ . '/../src/Clients/ApiClient.php');
+
+    assertContains("CURLOPT_PROTOCOLS_STR] = 'http,https'", $source, 'the modern form is set when available');
+    assertContains('CURLPROTO_HTTP | CURLPROTO_HTTPS', $source, 'and the older form when it is not');
+    assertTrue(
+        preg_match('/CURLOPT_FOLLOWLOCATION\s*=>\s*false/', $source) === 1,
+        'redirects stay off regardless',
+    );
+});
+
 check('Runtime itself parses on an interpreter too old to run the product', function (): void {
     // Its whole job is to report on such a server, so it cannot use anything
     // newer than the oldest PHP that might be asked to load it.

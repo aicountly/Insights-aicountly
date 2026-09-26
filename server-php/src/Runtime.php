@@ -87,9 +87,18 @@ final class Runtime
     {
         $problems = self::unmet();
 
+        // libcurl's version, because it is NOT PHP's. Which curl constants PHP
+        // defines depends on what it was linked against, and a host can run a
+        // current PHP against a years-old libcurl. That mismatch is invisible
+        // from every other field here, and it cost a production outage: an
+        // option constant that exists on one build and not the other is a fatal
+        // Error on the build without it.
+        $curl = function_exists('curl_version') ? curl_version() : null;
+
         return [
             'php'          => PHP_VERSION,
             'php_required' => self::MINIMUM_PHP,
+            'libcurl'      => is_array($curl) && isset($curl['version']) ? $curl['version'] : 'unknown',
             'ok'           => $problems === [],
             'problems'     => $problems,
         ];
