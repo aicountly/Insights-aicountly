@@ -1,32 +1,62 @@
 # insights-aicountly
 
-Insights for Aicountly — a React single-page app built with Vite and TypeScript,
-with a small PHP API alongside it. Both halves deploy to cPanel.
+Business intelligence and analytics for Aicountly — a React single-page app
+built with Vite and TypeScript, with a PHP API alongside it. Both halves deploy
+to cPanel.
 
 | Environment | App | API |
 | --- | --- | --- |
 | Production | https://insights.aicountly.com | https://insights.aicountly.com/api |
 | Sandbox | https://insights.gh.aicountly.com | https://insights.gh.aicountly.com/api |
 
-## What this app does today
+## What this app does
 
-Login → Dashboard. The dashboard shows a welcome message and a **Log out**
-button, and nothing else. No navigation, no modules, no placeholder cards —
-those arrive with the product.
+Insights answers questions about a company using figures read **live** from the
+other AICOUNTLY products, as the signed-in user, on the request that draws them.
+
+| Module | What it is |
+| --- | --- |
+| **Overview** | The headline figures for the chosen company, branch and period, with what changed and what needs attention. |
+| **Dashboards** | Dashboards people build, share, publish and revisit. |
+| **Dashboard builder** | A 12-column canvas with fourteen widget types, drag **and keyboard** move and resize, undo/redo, preview, revision history and explicit Save and Publish. |
+| **Metrics** | The governed metric catalogue — every definition, its owner, its accounting basis and the endpoint it is bound to — plus custom KPIs written as validated formulas. |
+| **Ask Insights** | A question in English, answered from figures that were actually fetched. Ask for a dashboard and it proposes one; nothing is created until you apply it. |
+| **Forecasts** | Baseline projections with the method and its assumptions stated, and a backtest. No invented confidence. |
+| **Exceptions** | Rule-based anomalies with their baseline, evidence and severity reasoning, and an acknowledge / dismiss / reopen trail. |
+| **Reports** | Saved questions, answered live, exported as real PDF, CSV and XLSX. |
+| **Data sources** | Which connected products are configured, reachable and permitted — separately, because they are different problems. |
+| **Settings** | Preferences, access, and what this deployment can and cannot answer. |
+
+Three rules run through all of it:
+
+1. **Live reads only.** No replication, no shadow ledger, no warehouse, no cron
+   sync. Insights' own database holds dashboards, saved definitions and
+   preferences — never a source transaction.
+2. **A missing figure is never zero.** Unavailable, denied, partial and not
+   applicable are four different answers and are shown as four different
+   answers.
+3. **Nothing is counted twice.** Books owns the accounting effect of a sale, so
+   a sale raised in Sales, Billing or POS is never added to revenue again. See
+   [docs/INTEGRATION_MAP.md](docs/INTEGRATION_MAP.md).
 
 Signing in is the AICOUNTLY portal's job, the same as every other AICOUNTLY
 SaaS: the app redirects to the portal, the portal returns an `auth_token`, and
 the app exchanges it for a short-lived session key. A user who is already signed
-in to another AICOUNTLY product lands straight on the dashboard.
+in to another AICOUNTLY product lands straight on the overview. Insights has no
+password of its own and issues no token.
 
-See [docs/auth/AICOUNTLY_AUTH_WORKFLOW.md](docs/auth/AICOUNTLY_AUTH_WORKFLOW.md).
+See [docs/auth/AICOUNTLY_AUTH_WORKFLOW.md](docs/auth/AICOUNTLY_AUTH_WORKFLOW.md),
+[docs/INTEGRATION_MAP.md](docs/INTEGRATION_MAP.md) — what each figure is bound to
+and what is deliberately not bound — and
+[docs/COMPLETION_REPORT.md](docs/COMPLETION_REPORT.md), which says what has been
+verified against fixtures and what has not been verified live.
 
 ## Layout
 
 ```
 web/          React app (Vite). Builds to web/dist, deployed to the document root.
 server-php/   PHP API. Deployed to the api/ folder inside the document root.
-docs/         deployment and auth notes
+docs/         deployment, auth and integration notes
 ```
 
 ## Getting started
@@ -53,14 +83,60 @@ same-origin.
 | `npm run build` | Type-check, then build to `web/dist/` |
 | `npm run typecheck` | Type-check only |
 | `npm run preview` | Serve the production build locally |
+| `npm run lint` | ESLint. Nothing is switched off to make the code pass |
+| `npm run test` | Vitest |
 
 The PHP API has no build step and no dependencies. To run it locally:
 
 ```bash
 cd server-php
-cp .env.example .env      # set APP_ENV=local
+cp .env.example .env      # set APP_ENV=local, and DB_*
+php bin/migrate.php
 php -S localhost:8000
 ```
+
+## Tests and verification
+
+```bash
+# Web
+cd web
+npm run lint && npm run typecheck && npm run test && npm run build
+
+# API — against a throwaway PostgreSQL and a stub standing in for the fleet
+server-php/tests/run.sh
+```
+
+`server-php/tests/stub/router.php` answers the **exact routes and payload
+shapes** read out of Manage, Books and Inventory, and models the things that go
+wrong — a company Manage refuses, a source that denies this caller, a source
+that is unreachable, a list that reports more rows than it returned. A test that
+passes against it is a test against the contracts the adapters really bind to.
+
+### Browser verification
+
+These run the built app and the API on one origin, exactly as they deploy, with
+the stub underneath. They verify the **application**; they say nothing about
+production data, and live-service verification is a separate exercise.
+
+```bash
+(cd web && npm run build)
+server-php/tests/serve.sh                              # http://127.0.0.1:8793
+
+node web/scripts/page-sweep-playwright.mjs --out /tmp/sweep   # every route at 3 widths
+node web/scripts/flow-playwright.mjs --out /tmp/flow          # the acceptance walk-through
+```
+
+The sweep screenshots every route at desktop, tablet and mobile and fails on a
+console error, a thrown error, horizontal overflow, or `NaN` in an SVG geometry
+attribute. The flow signs in, opens a company, builds a dashboard from a
+template, moves and resizes a widget **from the keyboard**, saves, reloads and
+compares, shares, exports PDF/CSV/XLSX, and checks that a reply arriving after
+the company changed is never painted.
+
+Playwright is deliberately **not** a dependency of this app — it is a
+verification tool, not something the product ships. Install it globally
+(`npm i -g playwright`) or in `web/`. In the Aicountly container Chromium is
+already present; do not run `playwright install`.
 
 ## Environment variables
 
@@ -79,6 +155,13 @@ template. There are two of them, and they work in opposite ways:
 | `VITE_APP_ENV` | `local`, `sandbox`, or `production` |
 | `VITE_PRODUCT_KEY` | Portal product key. Derived from the hostname when unset |
 | `VITE_PORTAL_LOGIN_URL` | Login portal override. Local development only |
+
+The server's variables — the database, the source products' base URLs, the
+Console AI binding and the inbound service keys — are documented inline in
+[server-php/.env.example](server-php/.env.example). Every source base URL is
+optional: unset, it is derived from this server's own hostname, so sandbox talks
+to sandbox. A value naming a host outside the AICOUNTLY allowlist is ignored and
+logged.
 
 Only `VITE_`-prefixed variables reach the browser bundle, and Vite inlines them
 at build time, so **treat every one of them as public**. Never put a secret,

@@ -1,0 +1,544 @@
+/* The Insights product surface.
+ *
+ * Scoped under `.insights-ui`, which the shell puts on the <main> — so every
+ * page inherits one set of tokens and a dashboard cannot drift from the list
+ * it links to.
+ *
+ * The tokens below are ALIASES onto the shared AICOUNTLY palette in index.css.
+ * The reference design for this product names them --ix-*; binding them to the
+ * fleet tokens rather than to hex values is what keeps Insights looking like
+ * the rest of the suite when the palette moves.
+ */
+
+.insights-ui {
+  --ix-green: var(--brand, #25b003);
+  --ix-green-strong: var(--accent, #187900);
+  --ix-green-soft: var(--brand-soft, #e8f6e4);
+  --ix-text: var(--fg, #17231e);
+  --ix-muted: var(--muted, #596b62);
+  --ix-border: var(--border, #e0e8e2);
+  --ix-border-strong: var(--border-strong, #c9d7ce);
+  --ix-surface: var(--surface, #fff);
+  --ix-surface-2: var(--surface-2, #f7faf8);
+  --ix-page: var(--bg, #f5f8f6);
+
+  color: var(--ix-text);
+  background: var(--ix-page);
+  min-width: 0;
+  font-family: inherit;
+}
+
+/* ---------------------------------------------------------------------------
+   Layout
+   --------------------------------------------------------------------------- */
+
+.insights-workspace {
+  padding: clamp(16px, 2vw, 28px);
+  min-width: 0;
+}
+
+.insights-heading,
+.insights-actions,
+.insights-context {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.insights-heading {
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.insights-heading h1 {
+  font-size: clamp(22px, 2.3vw, 30px);
+  margin: 4px 0 8px;
+  line-height: 1.2;
+  letter-spacing: -0.015em;
+}
+
+.insights-eyebrow {
+  color: var(--ix-green-strong);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  margin: 0;
+  text-transform: uppercase;
+}
+
+.insights-muted {
+  color: var(--ix-muted);
+  font-size: 14px;
+  margin: 0;
+  line-height: 1.55;
+}
+
+.insights-context {
+  background: var(--ix-surface);
+  border: 1px solid var(--ix-border);
+  border-radius: 12px;
+  padding: 12px;
+  margin-bottom: 16px;
+}
+
+.insights-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  margin: 18px 0;
+}
+
+.insights-main-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr);
+  gap: 18px;
+}
+
+.insights-panel {
+  background: var(--ix-surface);
+  border: 1px solid var(--ix-border);
+  border-radius: 14px;
+  padding: 20px;
+  min-width: 0;
+  box-shadow: 0 3px 14px rgb(25 52 36 / 3%);
+}
+
+.insights-panel--flush { padding: 0; overflow: hidden; }
+
+.insights-chart { min-height: 340px; }
+
+.insights-builder {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr) 320px;
+  gap: 16px;
+  align-items: start;
+}
+
+.insights-canvas {
+  min-width: 0;
+  min-height: 560px;
+  border: 1px dashed var(--ix-border-strong);
+  border-radius: 14px;
+  background: var(--ix-green-soft);
+  padding: 16px;
+}
+
+/* ---------------------------------------------------------------------------
+   Controls
+   --------------------------------------------------------------------------- */
+
+.insights-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--ix-border-strong);
+  border-radius: 9px;
+  padding: 9px 14px;
+  background: var(--ix-surface);
+  color: var(--ix-text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  min-height: 40px;
+  white-space: nowrap;
+}
+
+.insights-button:hover:not(:disabled) { background: var(--ix-surface-2); }
+
+.insights-button--primary {
+  background: var(--ix-green-strong);
+  border-color: var(--ix-green-strong);
+  color: #fff;
+}
+
+.insights-button--primary:hover:not(:disabled) { filter: brightness(1.08); background: var(--ix-green-strong); }
+
+.insights-button--quiet {
+  border-color: transparent;
+  background: transparent;
+  color: var(--ix-muted);
+  min-height: 32px;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.insights-button--danger { border-color: var(--danger); color: var(--danger); }
+
+.insights-button:focus-visible {
+  outline: 3px solid var(--ix-green-strong);
+  outline-offset: 2px;
+}
+
+.insights-button:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.insights-field { display: grid; gap: 5px; min-width: 0; }
+
+.insights-field > label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ix-muted);
+}
+
+.insights-field > .insights-hint {
+  font-size: 11.5px;
+  color: var(--ix-muted);
+  line-height: 1.45;
+}
+
+.insights-input,
+.insights-select,
+.insights-textarea {
+  width: 100%;
+  min-height: 40px;
+  padding: 9px 11px;
+  border: 1px solid var(--ix-border-strong);
+  border-radius: 9px;
+  background: var(--ix-surface);
+  color: var(--ix-text);
+  font: inherit;
+  font-size: 13px;
+}
+
+.insights-textarea { min-height: 84px; resize: vertical; line-height: 1.5; }
+
+.insights-input[aria-invalid='true'],
+.insights-select[aria-invalid='true'] { border-color: var(--danger); }
+
+.insights-checkbox { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+
+/* ---------------------------------------------------------------------------
+   Chips, badges and states
+   --------------------------------------------------------------------------- */
+
+.insights-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--ix-border);
+  border-radius: 999px;
+  background: var(--ix-surface-2);
+  font-size: 12px;
+  color: var(--ix-muted);
+  white-space: nowrap;
+  /* A chip never pushes the page sideways. Without this a long label is a
+     horizontal scrollbar on a phone, which moves the whole layout under the
+     reader's thumb. */
+  max-width: 100%;
+}
+
+/* For a chip that carries a sentence rather than a label — the Ask Insights
+   suggestions. Truncating those would hide the question being offered, so they
+   wrap instead, and read as the short paragraphs they are. */
+.insights-chip--wrap {
+  white-space: normal;
+  text-align: left;
+  border-radius: 14px;
+  line-height: 1.45;
+  padding: 7px 12px;
+}
+
+.insights-chip--active {
+  border-color: var(--ix-green-strong);
+  background: var(--ix-green-soft);
+  color: var(--ix-green-strong);
+  font-weight: 600;
+}
+
+.insights-chip button {
+  border: 0;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  color: inherit;
+  display: inline-flex;
+}
+
+.insights-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 600;
+  border: 1px solid transparent;
+}
+
+/* Status is never colour alone: each badge carries a glyph and a word. */
+.insights-badge--ready    { background: var(--success-bg); color: var(--success); border-color: color-mix(in srgb, var(--success) 25%, transparent); }
+.insights-badge--warn     { background: var(--warning-bg); color: var(--warning); border-color: color-mix(in srgb, var(--warning) 25%, transparent); }
+.insights-badge--danger   { background: var(--danger-bg);  color: var(--danger);  border-color: color-mix(in srgb, var(--danger) 25%, transparent); }
+.insights-badge--info     { background: var(--info-bg);    color: var(--info);    border-color: color-mix(in srgb, var(--info) 25%, transparent); }
+.insights-badge--neutral  { background: var(--ix-surface-2); color: var(--ix-muted); border-color: var(--ix-border); }
+
+.insights-state {
+  display: grid;
+  gap: 10px;
+  justify-items: center;
+  text-align: center;
+  padding: 36px 20px;
+  color: var(--ix-muted);
+  line-height: 1.6;
+}
+
+.insights-state h3 { margin: 0; font-size: 15px; color: var(--ix-text); }
+.insights-state p { margin: 0; max-width: 46ch; font-size: 13px; }
+
+.insights-skeleton {
+  border-radius: 8px;
+  background: linear-gradient(90deg, var(--ix-surface-2) 25%, var(--ix-surface-3, #eaf1ec) 37%, var(--ix-surface-2) 63%);
+  background-size: 400% 100%;
+  animation: insights-shimmer 1.3s ease infinite;
+}
+
+@keyframes insights-shimmer {
+  0% { background-position: 100% 50%; }
+  100% { background-position: 0 50%; }
+}
+
+/* ---------------------------------------------------------------------------
+   Tables
+   --------------------------------------------------------------------------- */
+
+.insights-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.insights-table th,
+.insights-table td {
+  padding: 9px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--ix-border);
+  vertical-align: top;
+}
+
+.insights-table thead th {
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ix-muted);
+  background: var(--ix-surface-2);
+  position: sticky;
+  top: 0;
+}
+
+.insights-table .is-numeric { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.insights-table tbody tr:hover { background: var(--ix-surface-2); }
+.insights-table-scroll { overflow-x: auto; }
+
+/* ---------------------------------------------------------------------------
+   Charts
+   --------------------------------------------------------------------------- */
+
+.insights-chart-frame { margin: 0; }
+.insights-chart-frame svg { display: block; width: 100%; height: auto; }
+
+.insights-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--ix-muted);
+}
+
+.insights-legend span { display: inline-flex; align-items: center; gap: 6px; }
+
+.insights-legend i {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  display: inline-block;
+}
+
+.insights-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---------------------------------------------------------------------------
+   Dialogs and drawers
+   --------------------------------------------------------------------------- */
+
+.insights-dialog-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgb(15 40 25 / 38%);
+  display: grid;
+  place-items: center;
+  padding: 20px;
+}
+
+.insights-dialog {
+  width: min(42rem, 100%);
+  max-height: min(86vh, 900px);
+  overflow: auto;
+  background: var(--ix-surface);
+  border: 1px solid var(--ix-border);
+  border-radius: 16px;
+  box-shadow: var(--shadow-lg);
+  padding: 22px;
+}
+
+.insights-drawer-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 55;
+  background: rgb(15 40 25 / 28%);
+}
+
+.insights-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 56;
+  width: min(30rem, 100%);
+  overflow: auto;
+  background: var(--ix-surface);
+  border-left: 1px solid var(--ix-border);
+  box-shadow: var(--shadow-lg);
+  padding: 20px;
+}
+
+/* ---------------------------------------------------------------------------
+   The dashboard grid
+   --------------------------------------------------------------------------- */
+
+.insights-grid {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 14px;
+  align-items: start;
+}
+
+.insights-grid-item { min-width: 0; }
+
+.insights-widget {
+  background: var(--ix-surface);
+  border: 1px solid var(--ix-border);
+  border-radius: 12px;
+  padding: 14px 16px;
+  height: 100%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  /* So .insights-widget__value can size itself to this card. */
+  container-type: inline-size;
+}
+
+.insights-widget--selected {
+  border-color: var(--ix-green-strong);
+  box-shadow: 0 0 0 2px var(--ix-green-soft);
+}
+
+.insights-widget__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  /* A three-column card on a laptop is about 110px of head. Six tool buttons do
+     not fit across that, and without the wrap they push out past the card's own
+     edge and sit on top of the next widget. */
+  flex-wrap: wrap;
+}
+
+.insights-widget__title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.3;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.insights-widget__tools { display: flex; gap: 2px; margin-left: auto; flex-wrap: wrap; justify-content: flex-end; }
+
+.insights-widget__value {
+  /* The figure sizes itself to the CARD, not to the window: the same widget is
+     three columns wide on one dashboard and twelve on another, and a rupee
+     total that overflows its card is worse than a small one — it sits over the
+     widget beside it and neither can be read. The vw clamp is the fallback for
+     anything without container queries. */
+  font-size: clamp(16px, 2vw, 26px);
+  font-size: clamp(13px, 9cqw, 28px);
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+  /* Last resort only. The clamp above is set so a real Indian rupee total fits
+     the narrowest card this grid produces, because a figure broken across two
+     lines mid-digit is hard to read. It is still better than one printed over
+     the widget beside it, which is what this prevents. */
+  overflow-wrap: anywhere;
+  /* A grid or flex item is never narrower than its min-content unless it is
+     told it may be, and min-content for a rupee total is the whole figure. This
+     is what actually lets it wrap inside a three-column card instead of running
+     out over the widget beside it. */
+  min-width: 0;
+}
+
+/* Same reason: the comparison line under a figure carries a date range and is
+   the other thing that runs out of a narrow card. */
+.insights-widget .insights-muted {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.insights-widget__value--empty { color: var(--ix-muted); font-size: 16px; font-weight: 600; }
+
+/* ---------------------------------------------------------------------------
+   Responsive
+   --------------------------------------------------------------------------- */
+
+@media (max-width: 1200px) {
+  .insights-builder { grid-template-columns: 210px minmax(0, 1fr); }
+  /* The properties panel becomes a drawer at this width — see
+     WidgetProperties, which renders into .insights-drawer below 1200px. */
+}
+
+@media (max-width: 1024px) {
+  .insights-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .insights-main-grid { grid-template-columns: 1fr; }
+  .insights-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+}
+
+@media (max-width: 640px) {
+  .insights-kpis,
+  .insights-builder { grid-template-columns: 1fr; }
+  .insights-grid { grid-template-columns: 1fr; }
+  .insights-panel { padding: 16px; }
+  .insights-actions { width: 100%; }
+  .insights-actions .insights-button { flex: 1; justify-content: center; }
+  .insights-drawer { width: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .insights-ui *,
+  .insights-ui *::before,
+  .insights-ui *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@media print {
+  .insights-ui .insights-actions,
+  .insights-ui .insights-widget__tools { display: none; }
+  .insights-panel, .insights-widget { break-inside: avoid; box-shadow: none; }
+}

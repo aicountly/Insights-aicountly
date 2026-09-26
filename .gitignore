@@ -41,3 +41,6 @@ Thumbs.db
 .eslintcache
 *.tsbuildinfo
 .cache/
+
+# Test-run artefacts
+server-php/.env.books-down

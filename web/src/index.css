@@ -1,30 +1,60 @@
+/* AICOUNTLY design tokens — green and white, which is what Aicountly is.
+
+   #25b003 is the brand mark. It is used for accents, active states and chart
+   ink; it is NEVER a background for white text, because it fails contrast
+   there. --accent is a darker green that clears 4.5:1 on white and does that
+   job instead, which is why there are two greens and not one.
+
+   These are the same values Sales and Appointments carry, so a user moving
+   between AICOUNTLY products does not feel they have changed application.
+
+   The product area inside the shell takes its own tokens from
+   ui/insights-ui.css. These are for the shell, the sign-in screen and the
+   launcher — the parts that sit outside it. */
+
 :root {
-  --bg: #ffffff;
-  --fg: #18181b;
-  --muted: #71717a;
-  --border: #e4e4e7;
-  --accent: #18181b;
-  --accent-fg: #fafafa;
+  --brand: #25b003;
+  --brand-soft: #e8f6e4;
+
+  --bg: #f5f8f6;
+  --fg: #17231e;
+  --muted: #596b62;
+  --border: #e0e8e2;
+  --accent: #187900;
+  --accent-fg: #ffffff;
+
+  --surface: #ffffff;
+  --surface-2: #f7faf8;
+  --surface-3: #eaf1ec;
+  --border-strong: #c9d7ce;
+  --link: #187900;
+  --focus: #187900;
+  --danger: #b42318;
+  --danger-bg: #fff0ee;
+  --success: #176a25;
+  --success-bg: #eaf7ed;
+  --warning: #875500;
+  --warning-bg: #fff4d9;
+  --info: #175cd3;
+  --info-bg: #eef4ff;
+
+  --radius: 0.75rem;
+  --radius-sm: 0.5rem;
+  --shadow: 0 3px 14px rgb(22 50 30 / 3%);
+  --shadow-lg: 0 18px 48px rgb(15 40 25 / 16%);
+  --sidebar-w: 15rem;
+  --header-h: 4rem;
 
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  line-height: 1.6;
-  color-scheme: light dark;
+  font-size: 14px;
+
+  /* The palette is a light one by design — a premium green-and-white surface
+     with dark panels in the middle of it is neither. Declaring the scheme
+     stops the browser recolouring form controls for a dark preference. */
+  color-scheme: light;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #09090b;
-    --fg: #fafafa;
-    --muted: #a1a1aa;
-    --border: #27272a;
-    --accent: #fafafa;
-    --accent-fg: #09090b;
-  }
-}
-
-* {
-  box-sizing: border-box;
-}
+* { box-sizing: border-box; }
 
 body {
   margin: 0;
@@ -32,4 +62,118 @@ body {
   background: var(--bg);
   color: var(--fg);
   -webkit-font-smoothing: antialiased;
+}
+
+a { color: var(--link); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+button, input, select, textarea { font: inherit; color: inherit; }
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* Tabular figures everywhere money or quantity appears: a column of amounts
+   that does not line up is a column somebody has to read twice. */
+.num {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------------------------
+   The shell
+   --------------------------------------------------------------------------- */
+
+.shell-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  border: 0;
+  padding: 0;
+  background: rgb(15 40 25 / 35%);
+  cursor: pointer;
+}
+
+.shell-sidebar-toggle {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  cursor: pointer;
+}
+
+@media (max-width: 900px) {
+  .shell-sidebar {
+    position: fixed !important;
+    z-index: 40;
+    transform: translateX(-100%);
+    transition: transform 0.18s ease;
+    box-shadow: var(--shadow-lg);
+  }
+  .shell-sidebar[data-open='true'] { transform: translateX(0); }
+  .shell-sidebar-toggle { display: inline-flex; }
+}
+
+@media (min-width: 901px) {
+  .shell-scrim { display: none; }
+}
+
+/* ---------------------------------------------------------------------------
+   The sign-in screen
+   --------------------------------------------------------------------------- */
+
+.screen {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  padding: 24px;
+}
+
+.panel {
+  width: min(28rem, 100%);
+  padding: 32px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  text-align: center;
+}
+
+.eyebrow {
+  margin: 0 0 12px;
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.message { margin: 0 0 20px; color: var(--muted); line-height: 1.6; }
+.welcome { margin: 0 0 20px; font-size: 1.25rem; line-height: 1.35; }
+
+.button {
+  padding: 10px 18px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.button:hover { filter: brightness(1.08); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
